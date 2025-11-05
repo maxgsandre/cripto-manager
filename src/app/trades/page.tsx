@@ -118,6 +118,7 @@ export default function TradesPage() {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<TradeRow[]>([]);
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -203,17 +204,85 @@ export default function TradesPage() {
     }
   };
 
-  const columnHelper = createColumnHelper<TradeRow>();
+  // Tipos auxiliares para exibição agrupada
+  type DisplayRow = TradeRow & { _isGroup?: boolean; _isChild?: boolean; _childrenCount?: number };
+
+  // Agrupar por orderId quando houver multiplas execucoes
+  const groupedRows: DisplayRow[] = useMemo(() => {
+    const byOrder: Record<string, TradeRow[]> = {};
+    for (const r of rows) {
+      if (r.orderId) {
+        if (!byOrder[r.orderId]) byOrder[r.orderId] = [];
+        byOrder[r.orderId].push(r);
+      }
+    }
+
+    const out: DisplayRow[] = [];
+    const emitted = new Set<string>();
+
+    for (const r of rows) {
+      if (r.orderId && byOrder[r.orderId] && byOrder[r.orderId].length > 1) {
+        if (emitted.has(r.orderId)) continue;
+        const children = byOrder[r.orderId].slice().sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime());
+        const totalQty = children.reduce((s, x) => s + Number(x.qty || 0), 0);
+        const totalVol = children.reduce((s, x) => s + Number(x.qty || 0) * Number(x.price || 0), 0);
+        const avgPrice = totalQty > 0 ? totalVol / totalQty : 0;
+        const totalFees = children.reduce((s, x) => s + Number(x.feeValue || 0), 0);
+        const totalPnl = children.reduce((s, x) => s + Number(x.realizedPnl || 0), 0);
+        const first = children[0];
+        const parent: DisplayRow = {
+          ...first,
+          qty: String(totalQty),
+          price: String(avgPrice),
+          feeValue: String(totalFees),
+          realizedPnl: String(totalPnl),
+          _isGroup: true,
+          _childrenCount: children.length,
+        };
+        out.push(parent);
+        if (expandedOrders[first.orderId!]) {
+          for (const c of children) out.push({ ...c, _isChild: true });
+        }
+        emitted.add(first.orderId!);
+      } else {
+        out.push({ ...r });
+      }
+    }
+    return out;
+  }, [rows, expandedOrders]);
+
+  const columnHelper = createColumnHelper<DisplayRow>();
   const columns = useMemo(
     () => [
       columnHelper.accessor('executedAt', { 
         header: '📅 Data/Hora',
         cell: ({ getValue }) => formatDateTime(getValue())
       }),
+      columnHelper.accessor('orderId', {
+        header: '🧾 Ordem',
+        cell: ({ row, getValue }) => {
+          const data = row.original;
+          if (data._isGroup) {
+            const expanded = !!expandedOrders[data.orderId as string];
+            return (
+              <span className="font-mono text-blue-300">
+                {getValue() || '-'} ({data._childrenCount} exec.) {expanded ? '▾' : '▸'}
+              </span>
+            );
+          }
+          return (
+            <span className={`font-mono text-xs ${data._isChild ? 'text-slate-400 pl-4' : 'text-slate-300'}`}>
+              {data._isChild ? '↳ ' : ''}{getValue() || '-'}
+            </span>
+          );
+        },
+      }),
       columnHelper.accessor('symbol', { 
         header: '💰 Par Moeda',
-        cell: ({ getValue }) => (
-          <span className="font-mono font-semibold text-blue-400">{getValue()}</span>
+        cell: ({ getValue, row }) => (
+          <span className={`font-mono font-semibold text-blue-400 ${row.original._isChild ? 'opacity-70' : ''}`}>
+            {getValue()}
+          </span>
         )
       }),
       columnHelper.accessor('side', { 
@@ -232,21 +301,21 @@ export default function TradesPage() {
       }),
       columnHelper.accessor('qty', { 
         header: '📈 Quantidade',
-        cell: ({ getValue }) => (
-          <span className="font-mono">{Number(getValue()).toFixed(8)}</span>
+        cell: ({ getValue, row }) => (
+          <span className={`font-mono ${row.original._isGroup ? 'font-semibold' : ''}`}>{Number(getValue()).toFixed(8)}</span>
         )
       }),
       columnHelper.accessor('price', { 
         header: '💵 Preço',
-        cell: ({ getValue }) => (
-          <span className="font-mono">{formatCurrency(getValue())}</span>
+        cell: ({ getValue, row }) => (
+          <span className={`font-mono ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</span>
         )
       }),
       columnHelper.accessor('feeValue', { 
         header: '💸 Taxa',
         cell: ({ getValue, row }) => (
           <div className="text-sm">
-            <div className="font-mono">{formatCurrency(getValue())}</div>
+            <div className={`font-mono ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</div>
             <div className="text-xs text-gray-500">{row.original.feeAsset}</div>
           </div>
         )
@@ -257,7 +326,7 @@ export default function TradesPage() {
         cell: ({ row }) => {
           const volume = calculateVolume(row.original.qty, row.original.price);
           return (
-            <span className="font-mono font-semibold text-purple-400">
+            <span className={`font-mono font-semibold text-purple-400 ${row.original._isGroup ? 'underline' : ''}`}>
               {formatCurrency(volume)}
             </span>
           );
@@ -303,10 +372,10 @@ export default function TradesPage() {
         )
       }),
     ],
-    [columnHelper]
+    [columnHelper, expandedOrders]
   );
 
-  const table = useReactTable({ data: rows, columns, getCoreRowModel: getCoreRowModel() });
+  const table = useReactTable({ data: groupedRows, columns, getCoreRowModel: getCoreRowModel() });
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -477,13 +546,37 @@ export default function TradesPage() {
               ))}
             </thead>
             <tbody className="divide-y divide-white/10">
-              {table.getRowModel().rows.map((r, index) => (
-                <tr key={r.id} className={`hover:bg-white/5 transition-colors ${index % 2 === 0 ? 'bg-white/5' : 'bg-white/10'}`}>
-                  {r.getVisibleCells().map((c) => (
-                    <td key={c.id} className="px-4 py-3 text-sm text-white">{flexRender(c.column.columnDef.cell, c.getContext())}</td>
-                  ))}
-                </tr>
-              ))}
+              {table.getRowModel().rows.map((r, index) => {
+                const data = r.original;
+                const isGroup = !!data._isGroup;
+                const isChild = !!data._isChild;
+                const isExpanded = isGroup && data.orderId ? !!expandedOrders[data.orderId] : false;
+                
+                return (
+                  <tr
+                    key={r.id}
+                    onClick={() => {
+                      if (isGroup && data.orderId) {
+                        setExpandedOrders((s) => ({ ...s, [data.orderId!]: !isExpanded }));
+                      }
+                    }}
+                    className={`
+                      transition-all duration-200
+                      ${isGroup ? 'cursor-pointer hover:bg-blue-500/20' : ''}
+                      ${isExpanded ? 'bg-blue-500/10 border-l-2 border-blue-500' : ''}
+                      ${isChild ? 'bg-slate-800/50' : ''}
+                      ${!isGroup && !isChild ? (index % 2 === 0 ? 'bg-white/5' : 'bg-white/10') : ''}
+                      ${!isGroup ? 'hover:bg-white/5' : ''}
+                    `}
+                  >
+                    {r.getVisibleCells().map((c) => (
+                      <td key={c.id} className={`px-4 py-3 text-sm text-white ${isChild ? 'pl-8' : ''}`}>
+                        {flexRender(c.column.columnDef.cell, c.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
