@@ -2,7 +2,6 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    // Teste simples de conexão
     const result = await prisma.$queryRaw`SELECT 1 as test`;
     
     return Response.json({ 

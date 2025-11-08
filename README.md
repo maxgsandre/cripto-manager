@@ -31,8 +31,8 @@ npm run dev
 - `GET /api/trades?month=YYYY-MM&market?&symbol?&page?&pageSize?` → lista trades e resumo mensal
 - `GET /api/export/csv` → CSV filtrado (mesmos parâmetros)
 - `GET /api/export/pdf` → PDF mensal (resumo)
-- `POST /api/jobs/sync-all` → dispara sincronização (stub)
-- `GET/POST /api/accounts` → listar/criar contas (armazenamento temporário Base64)
+- `POST /api/jobs/sync-all` → dispara sincronização
+- `GET/POST /api/accounts` → listar/criar contas
 
 ### UI
 - `/dashboard`: KPIs (PnL, ROI aprox., taxas, trades) e gráfico de PnL diário
@@ -40,12 +40,8 @@ npm run dev
 - `/accounts`: formulário (name/market/apiKey/apiSecret) e listagem, botão "Sincronizar agora"
 
 ### Segurança
-- Não expor chaves Binance no cliente. Hoje Base64 é temporário; substituir por criptografia forte (libsodium/secretbox) com nonce + ciphertext e chave fora do banco (env/KMS).
-
-### Próximos passos
-- Integração real com Binance (assinatura HMAC‑SHA256, paginação, idempotência por tradeId/orderId)
-- Trocar Base64 por libsodium
-- Configurar Vercel Cron chamando `POST /api/jobs/sync-all` (ex: `0 */6 * * *`)
+- Chaves Binance criptografadas com libsodium (secretbox)
+- Chave de criptografia via variável de ambiente `ENCRYPTION_KEY`
 
 ### Scripts
 - `npm run db:migrate` → `prisma migrate dev`

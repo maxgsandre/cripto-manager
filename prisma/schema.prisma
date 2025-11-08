@@ -67,7 +67,6 @@ model BinanceAccount {
   updatedAt    DateTime   @updatedAt
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   cashflows    Cashflow[]
-  // trades       Trade[] // Removido temporariamente
 }
 
 model Trade {
@@ -88,7 +87,6 @@ model Trade {
   executedAt  DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  // account     BinanceAccount  @relation(fields: [accountId], references: [id]) // Removido temporariamente
 }
 
 model Cashflow {
