@@ -43,8 +43,19 @@ function decToString(d: unknown): string {
 export async function getTrades(
   query: TradesQuery
 ): Promise<PaginatedResult<TradeRow>> {
-  if (!query.month) throw new Error('month is required (YYYY-MM)');
-  const { start, end } = monthRange(query.month);
+  let start: Date;
+  let end: Date;
+  
+  if (query.startDate && query.endDate) {
+    start = new Date(query.startDate + 'T00:00:00.000Z');
+    end = new Date(query.endDate + 'T23:59:59.999Z');
+  } else if (!query.month) {
+    throw new Error('month or startDate/endDate is required');
+  } else {
+    const range = monthRange(query.month);
+    start = range.start;
+    end = range.end;
+  }
 
   const where = {
     executedAt: { gte: start, lte: end },
