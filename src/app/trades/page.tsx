@@ -112,6 +112,8 @@ function getPeriodFilter(period: string): string {
 export default function TradesPage() {
   const [month, setMonth] = useState(getMonth());
   const [period, setPeriod] = useState('month');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [market, setMarket] = useState('');
   const [symbol, setSymbol] = useState('');
   const [page, setPage] = useState(1);
@@ -123,9 +125,15 @@ export default function TradesPage() {
   const [syncStartDate, setSyncStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [syncSymbols, setSyncSymbols] = useState('BTCUSDT\nETHUSDT\nBNBUSDT');
+  const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
 
   useEffect(() => {
-    const currentMonth = period === 'custom' ? month : getPeriodFilter(period);
+    const currentMonth = period === 'custom' && startDate && endDate 
+      ? `${startDate}_${endDate}` 
+      : period === 'custom' 
+        ? month 
+        : getPeriodFilter(period);
+    
     type ApiTrade = {
       executedAt: string | Date;
       exchange: string;
@@ -144,6 +152,10 @@ export default function TradesPage() {
     const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
     if (market) params.set('market', market);
     if (symbol) params.set('symbol', symbol);
+    if (period === 'custom' && startDate && endDate) {
+      params.set('startDate', startDate);
+      params.set('endDate', endDate);
+    }
     fetch(`/api/trades?${params.toString()}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((d: { total: number; rows: ApiTrade[] }) => {
@@ -166,7 +178,52 @@ export default function TradesPage() {
           }))
         );
       });
-  }, [month, period, market, symbol, page, pageSize]);
+  }, [month, period, startDate, endDate, market, symbol, page, pageSize]);
+
+  const handleExportCSV = () => {
+    const currentMonth = period === 'custom' && startDate && endDate 
+      ? `${startDate}_${endDate}` 
+      : period === 'custom' 
+        ? month 
+        : getPeriodFilter(period);
+    const params = new URLSearchParams({ month: currentMonth });
+    if (market) params.set('market', market);
+    if (symbol) params.set('symbol', symbol);
+    if (period === 'custom' && startDate && endDate) {
+      params.set('startDate', startDate);
+      params.set('endDate', endDate);
+    }
+    window.open(`/api/export/csv?${params.toString()}`, '_blank');
+  };
+
+  const handleExportPDF = () => {
+    const currentMonth = period === 'custom' && startDate && endDate 
+      ? `${startDate}_${endDate}` 
+      : period === 'custom' 
+        ? month 
+        : getPeriodFilter(period);
+    const params = new URLSearchParams({ month: currentMonth });
+    if (market) params.set('market', market);
+    if (symbol) params.set('symbol', symbol);
+    if (period === 'custom' && startDate && endDate) {
+      params.set('startDate', startDate);
+      params.set('endDate', endDate);
+    }
+    window.open(`/api/export/pdf?${params.toString()}`, '_blank');
+  };
+
+  const periodOptions = [
+    { value: 'today', label: '📅 Hoje' },
+    { value: 'week', label: '📆 Esta Semana' },
+    { value: 'month', label: '📅 Este Mês' },
+    { value: 'year', label: '📅 Este Ano' },
+    { value: 'custom', label: '🔧 Personalizado' },
+  ];
+
+  const getPeriodLabel = () => {
+    const option = periodOptions.find(opt => opt.value === period);
+    return option ? option.label : '📅 Este Mês';
+  };
 
   const syncTrades = async () => {
     try {
@@ -397,61 +454,103 @@ export default function TradesPage() {
       </div>
       
       <Toolbar>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-300">⏰ Período</label>
-          <select 
-            value={period} 
-            onChange={(e) => setPeriod(e.target.value)} 
-            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="today">📅 Hoje</option>
-            <option value="week">📆 Esta Semana</option>
-            <option value="month">📅 Este Mês</option>
-            <option value="year">📅 Este Ano</option>
-            <option value="custom">🔧 Personalizado</option>
-          </select>
+        <div className="relative">
+          <label className="block text-sm font-medium text-slate-300 mb-1">⏰ Período</label>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPeriodDropdownOpen(!periodDropdownOpen)}
+              className="w-full min-w-[180px] flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-4 py-2.5 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <span>{getPeriodLabel()}</span>
+              <span className={`transition-transform ${periodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+            </button>
+            {periodDropdownOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setPeriodDropdownOpen(false)}
+                />
+                <div className="absolute z-20 mt-1 w-full bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                  {periodOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setPeriod(option.value);
+                        setPeriodDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                        period === option.value ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
         {period === 'custom' && (
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-300">📅 Mês</label>
-            <input 
-              type="month" 
-              value={month} 
-              onChange={(e) => setMonth(e.target.value)} 
-              className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-            />
-          </div>
+          <>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Inicial</label>
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                required
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Final</label>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)} 
+                min={startDate}
+                className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                required
+              />
+            </div>
+          </>
         )}
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-300">🏪 Market</label>
+        <div className="flex flex-col">
+          <label className="text-sm font-medium text-slate-300 mb-1">🏪 Market</label>
           <input 
             value={market} 
             onChange={(e) => setMarket(e.target.value)} 
             placeholder="SPOT/FUTURES" 
-            className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+            className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
           />
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-300">💰 Symbol</label>
+        <div className="flex flex-col">
+          <label className="text-sm font-medium text-slate-300 mb-1">💰 Symbol</label>
           <input 
             value={symbol} 
             onChange={(e) => setSymbol(e.target.value)} 
             placeholder="e.g. BTCUSDT" 
-            className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+            className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
           />
         </div>
-        <a 
-          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" 
-          href={`/api/export/csv?month=${period === 'custom' ? month : getPeriodFilter(period)}&market=${market}&symbol=${symbol}`}
-        >
-          📊 Export CSV
-        </a>
-        <a 
-          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" 
-          href={`/api/export/pdf?month=${period === 'custom' ? month : getPeriodFilter(period)}&market=${market}&symbol=${symbol}`}
-        >
-          📄 Export PDF
-        </a>
+        <div className="flex items-end gap-2">
+          <button
+            onClick={handleExportCSV}
+            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2"
+          >
+            <span>📊</span>
+            <span>Export CSV</span>
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2"
+          >
+            <span>📄</span>
+            <span>Export PDF</span>
+          </button>
+        </div>
       </Toolbar>
 
       {/* Métricas extras */}
@@ -582,32 +681,38 @@ export default function TradesPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between bg-white/5 backdrop-blur-sm p-4 rounded-lg border border-white/10">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/5 backdrop-blur-sm p-4 rounded-lg border border-white/10">
         <div className="flex items-center gap-2">
           <button 
-            className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50" 
+            className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2" 
             disabled={page <= 1} 
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
-            ← Anterior
+            <span>←</span>
+            <span className="hidden sm:inline">Anterior</span>
           </button>
-          <span className="px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg font-medium">
-            Página {page} de {totalPages}
-          </span>
+          <div className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg font-medium text-center min-w-[120px]">
+            <div className="text-sm">Página</div>
+            <div className="text-lg font-bold">{page} / {totalPages}</div>
+          </div>
           <button 
-            className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg font-medium transition-colors disabled:opacity-50" 
+            className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2" 
             disabled={page >= totalPages} 
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
           >
-            Próximo →
+            <span className="hidden sm:inline">Próximo</span>
+            <span>→</span>
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-300">Itens por página:</label>
+          <label className="text-sm font-medium text-slate-300 whitespace-nowrap">Itens por página:</label>
           <select 
-            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer" 
             value={pageSize} 
-            onChange={(e) => setPageSize(Number(e.target.value))}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setPage(1);
+            }}
           >
             <option value={10}>10</option>
             <option value={20}>20</option>
