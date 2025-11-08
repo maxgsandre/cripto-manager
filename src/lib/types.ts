@@ -1,7 +1,9 @@
 export type MarketType = 'SPOT' | 'FUTURES' | 'BOTH';
 
 export interface TradesQuery {
-  month: string; // YYYY-MM
+  month: string; // YYYY-MM or YYYY-MM-DD_YYYY-MM-DD for custom range
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
   market?: MarketType | string;
   symbol?: string;
   page?: number;
