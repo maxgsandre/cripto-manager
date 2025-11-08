@@ -126,6 +126,7 @@ export default function TradesPage() {
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [syncSymbols, setSyncSymbols] = useState('BTCUSDT\nETHUSDT\nBNBUSDT');
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
+  const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
 
   useEffect(() => {
     const currentMonth = period === 'custom' && startDate && endDate 
@@ -706,19 +707,42 @@ export default function TradesPage() {
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-slate-300 whitespace-nowrap">Itens por página:</label>
-          <select 
-            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer" 
-            value={pageSize} 
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
-          >
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPageSizeDropdownOpen(!pageSizeDropdownOpen)}
+              className="min-w-[80px] flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <span>{pageSize}</span>
+              <span className={`transition-transform ${pageSizeDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+            </button>
+            {pageSizeDropdownOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setPageSizeDropdownOpen(false)}
+                />
+                <div className="absolute z-20 mt-1 w-full bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                  {[10, 20, 50, 100].map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => {
+                        setPageSize(size);
+                        setPage(1);
+                        setPageSizeDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                        pageSize === size ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
       </div>
