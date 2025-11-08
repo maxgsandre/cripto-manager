@@ -18,12 +18,27 @@ function toCsvRow(values: (string | number | null | undefined)[]): string {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const month = searchParams.get('month') || '';
+  const startDate = searchParams.get('startDate') || undefined;
+  const endDate = searchParams.get('endDate') || undefined;
   const market = searchParams.get('market') || undefined;
   const symbol = searchParams.get('symbol') || undefined;
 
-  if (!month) return new Response('month query is required', { status: 400 });
+  let start: Date;
+  let end: Date;
+  let filename: string;
 
-  const { start, end } = monthRange(month);
+  if (startDate && endDate) {
+    start = new Date(startDate + 'T00:00:00.000Z');
+    end = new Date(endDate + 'T23:59:59.999Z');
+    filename = `trades_${startDate}_${endDate}.csv`;
+  } else if (month) {
+    const range = monthRange(month);
+    start = range.start;
+    end = range.end;
+    filename = `trades_${month}.csv`;
+  } else {
+    return new Response('month or startDate/endDate query is required', { status: 400 });
+  }
 
   const where = {
     executedAt: { gte: start, lte: end },
@@ -64,7 +79,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="trades_${month}.csv"`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
     },
   });
 }

@@ -9,12 +9,30 @@ import { monthRange } from '@/lib/format';
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const month = searchParams.get('month') || '';
+  const startDate = searchParams.get('startDate') || undefined;
+  const endDate = searchParams.get('endDate') || undefined;
   const market = searchParams.get('market') || undefined;
   const symbol = searchParams.get('symbol') || undefined;
 
-  if (!month) return new Response('month query is required', { status: 400 });
+  let start: Date;
+  let end: Date;
+  let label: string;
+  let filename: string;
 
-  const { start, end, label } = monthRange(month);
+  if (startDate && endDate) {
+    start = new Date(startDate + 'T00:00:00.000Z');
+    end = new Date(endDate + 'T23:59:59.999Z');
+    label = `${startDate} a ${endDate}`;
+    filename = `report_${startDate}_${endDate}.pdf`;
+  } else if (month) {
+    const range = monthRange(month);
+    start = range.start;
+    end = range.end;
+    label = range.label;
+    filename = `report_${label}.pdf`;
+  } else {
+    return new Response('month or startDate/endDate query is required', { status: 400 });
+  }
   const where = {
     executedAt: { gte: start, lte: end },
     ...(market ? { market } : {}),
@@ -43,15 +61,22 @@ export async function GET(req: NextRequest) {
   }
   const roi = bankroll === 0 ? 0 : pnl / bankroll;
 
-  // Build PDF (lazy import, avoiding bundling)
-  const PDFDocument = (await import('pdfkit').catch(() => ({ default: eval('require')("pdfkit") }))).default;
+  // Build PDF (dynamic require to avoid bundling issues with Turbopack)
+  let PDFDocument: any;
+  if (typeof require !== 'undefined') {
+    PDFDocument = require('pdfkit');
+  } else {
+    const pdfkitModule = await import('pdfkit');
+    PDFDocument = pdfkitModule.default || pdfkitModule;
+  }
+  
   const doc = new PDFDocument({ size: 'A4', margin: 48 });
   const chunks: Buffer[] = [];
   doc.on('data', (c: Buffer) => chunks.push(c));
 
-  doc.fontSize(18).text('Relatório Mensal - Binance Manager', { align: 'center' });
+  doc.fontSize(18).text('Relatório - Binance Manager', { align: 'center' });
   doc.moveDown(0.5);
-  doc.fontSize(12).text(`Mês: ${label}`);
+  doc.fontSize(12).text(`Período: ${label}`);
   if (market) doc.text(`Mercado: ${market}`);
   if (symbol) doc.text(`Símbolo: ${symbol}`);
   doc.moveDown();
@@ -81,7 +106,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="report_${label}.pdf"`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
     },
   });
 }
