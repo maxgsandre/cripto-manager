@@ -84,6 +84,7 @@ model Trade {
   realizedPnl Decimal  @db.Decimal(38, 18)
   orderId     String?
   tradeId     String?
+  orderType   String?  // LIMIT, MARKET, STOP_LOSS, TAKE_PROFIT, etc.
   executedAt  DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
