@@ -65,6 +65,7 @@ export async function PUT(req: NextRequest) {
       create: { userId, month, initialBalance }
     });
 
+    console.log(`[MonthlyBalance] Saldo salvo: userId=${userId}, month=${month}, initialBalance=${initialBalance}`);
     return Response.json({ ok: true, balance: balance.initialBalance });
   } catch (error) {
     console.error('Error updating balance:', error);
