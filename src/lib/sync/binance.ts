@@ -80,7 +80,7 @@ interface BinanceTrade {
   realizedPnl?: string;
   time: number;
   isBuyer?: boolean; // Usado em SPOT para determinar se comprou ou vendeu
-  isMaker?: boolean;
+  isMaker?: boolean; // true = LIMIT (maker), false = MARKET (taker)
 }
 
 async function fetchBinanceTrades(
@@ -199,7 +199,7 @@ export async function syncAccount(
     }
 
     let inserted = 0;
-    const updated = 0;
+    let updated = 0;
 
     // Criar mapa para rastrear posições (compra e venda)
     const positions = new Map<string, Array<{ qty: number; price: number; isBuyer: boolean; time: number }>>();
@@ -215,6 +215,11 @@ export async function syncAccount(
       if (!side) {
         side = 'BUY';
       }
+      
+      // Inferir tipo de ordem baseado em isMaker
+      // isMaker = true significa LIMIT (maker), false significa MARKET (taker)
+      // Nota: STOP_LOSS, TAKE_PROFIT, etc. precisariam ser buscados via orderId
+      const orderType = trade.isMaker === true ? 'LIMIT' : trade.isMaker === false ? 'MARKET' : null;
       
       // Calcular qty e price como números
       const qty = Number(trade.qty || trade.quantity || '0');
@@ -290,9 +295,11 @@ export async function syncAccount(
               feeAsset: trade.commissionAsset,
               feePct: '0',
               realizedPnl: realizedPnl,
+              orderType: orderType,
               executedAt: new Date(trade.time),
             }
           });
+          updated++;
         } else {
           await prisma.trade.create({
             data: {
@@ -310,11 +317,12 @@ export async function syncAccount(
               realizedPnl: trade.realizedPnl || '0',
               orderId: trade.orderId.toString(),
               tradeId: String(tradeId),
+              orderType: orderType,
               executedAt: new Date(trade.time),
             }
           });
+          inserted++;
         }
-        inserted++;
       } catch (error) {
         console.error('Error upserting trade:', error);
       }
