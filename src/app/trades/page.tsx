@@ -110,7 +110,7 @@ function getPeriodFilter(period: string): string {
 }
 
 export default function TradesPage() {
-  const [month, setMonth] = useState(getMonth());
+  const month = getMonth();
   const [period, setPeriod] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
