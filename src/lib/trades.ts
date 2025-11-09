@@ -18,6 +18,7 @@ export type TradeRow = {
   realizedPnl: string;
   orderId?: string | null;
   tradeId?: string | null;
+  orderType?: string | null;
   executedAt: Date;
 };
 
@@ -82,6 +83,7 @@ export async function getTrades(
     realizedPnl: unknown;
     orderId?: string | null;
     tradeId?: string | null;
+    orderType?: string | null;
     executedAt: Date;
   };
   const trades: DbTrade[] = (await prisma.trade.findMany({
@@ -121,6 +123,7 @@ export async function getTrades(
     realizedPnl: decToString(t.realizedPnl as unknown),
     orderId: t.orderId,
     tradeId: t.tradeId,
+    orderType: t.orderType || null,
     executedAt: t.executedAt,
   }));
 
