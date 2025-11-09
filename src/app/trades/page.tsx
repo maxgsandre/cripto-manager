@@ -19,6 +19,7 @@ type TradeRow = {
   realizedPnl: string;
   orderId?: string;
   tradeId?: string;
+  orderType?: string | null;
 };
 
 // Função para calcular ROI por trade (simplificado)
@@ -149,6 +150,7 @@ export default function TradesPage() {
       realizedPnl: string;
       orderId?: string | null;
       tradeId?: string | null;
+      orderType?: string | null;
     };
     const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
     if (market) params.set('market', market);
@@ -176,6 +178,7 @@ export default function TradesPage() {
             realizedPnl: t.realizedPnl,
             orderId: t.orderId ?? undefined,
             tradeId: t.tradeId ?? undefined,
+            orderType: t.orderType ?? null,
           }))
         );
       });
@@ -250,10 +253,21 @@ export default function TradesPage() {
       if (result.error) {
         alert(`Erro: ${result.error}`);
       } else if (result.results && result.results.length > 0) {
-        const total = result.results.reduce((acc: number, r: { inserted: number }) => acc + r.inserted, 0);
-        alert(`Sucesso! ${total} trades sincronizados`);
-        // Recarregar página para mostrar novos trades
-        window.location.reload();
+        const totalInserted = result.results.reduce((acc: number, r: { inserted: number }) => acc + (r.inserted || 0), 0);
+        const totalUpdated = result.results.reduce((acc: number, r: { updated: number }) => acc + (r.updated || 0), 0);
+        const total = totalInserted + totalUpdated;
+        
+        if (total > 0) {
+          let message = `Sucesso! `;
+          if (totalInserted > 0) message += `${totalInserted} novos trades inseridos`;
+          if (totalInserted > 0 && totalUpdated > 0) message += ` e `;
+          if (totalUpdated > 0) message += `${totalUpdated} trades atualizados`;
+          alert(message);
+          // Recarregar página para mostrar novos trades
+          window.location.reload();
+        } else {
+          alert('Nenhum trade encontrado para sincronizar no período selecionado');
+        }
       } else {
         alert('Nenhum trade encontrado para sincronizar');
       }
@@ -357,11 +371,59 @@ export default function TradesPage() {
           );
         }
       }),
-      columnHelper.accessor('qty', { 
-        header: '📈 Quantidade',
-        cell: ({ getValue, row }) => (
-          <span className={`font-mono ${row.original._isGroup ? 'font-semibold' : ''}`}>{Number(getValue()).toFixed(8)}</span>
-        )
+      columnHelper.display({
+        id: 'orderInfo',
+        header: '📋 Tipo de Ordem',
+        cell: ({ row }) => {
+          const data = row.original;
+          const orderType = data.orderType;
+          
+          // Se não tiver orderType, mostrar "-"
+          if (!orderType || orderType === '-') {
+            return (
+              <div className="flex flex-col gap-1">
+                <span className="px-2 py-1 rounded text-xs font-semibold bg-slate-500/20 text-slate-400 border border-slate-500/30">
+                  -
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  {data.market}
+                </span>
+              </div>
+            );
+          }
+          
+          // Mapear tipos de ordem para labels mais amigáveis
+          const orderTypeLabels: Record<string, string> = {
+            'LIMIT': 'Limite',
+            'MARKET': 'Mercado',
+            'STOP_LOSS': 'Stop Loss',
+            'STOP_MARKET': 'Stop Mercado',
+            'TAKE_PROFIT': 'Take Profit',
+            'TAKE_PROFIT_MARKET': 'TP Mercado',
+          };
+          
+          const label = orderTypeLabels[orderType] || orderType;
+          
+          // Cores diferentes para cada tipo
+          const getOrderTypeColor = (type: string) => {
+            if (type === 'LIMIT') return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+            if (type === 'MARKET') return 'bg-green-500/20 text-green-400 border border-green-500/30';
+            if (type?.includes('STOP')) return 'bg-red-500/20 text-red-400 border border-red-500/30';
+            if (type?.includes('TAKE_PROFIT')) return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            return 'bg-slate-500/20 text-slate-400 border border-slate-500/30';
+          };
+          
+          return (
+            <div className="flex flex-col gap-1">
+              <span className={`px-2 py-1 rounded text-xs font-semibold ${getOrderTypeColor(orderType)}`}>
+                {label}
+              </span>
+              <span className="text-xs text-slate-400 font-mono">
+                {data.market}
+              </span>
+            </div>
+          );
+        }
       }),
       columnHelper.accessor('price', { 
         header: '💵 Preço',
