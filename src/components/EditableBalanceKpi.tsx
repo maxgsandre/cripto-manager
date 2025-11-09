@@ -36,16 +36,47 @@ function EditableBalanceKpi({ label, value, icon = '💳', color = 'purple', mon
   const [currentBalanceUSDT, setCurrentBalanceUSDT] = useState('0');
   const [loadingBalance, setLoadingBalance] = useState(false);
 
+  const fetchInitialBalance = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user || !month) return;
+
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/monthly-balance?month=${encodeURIComponent(month)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDisplayValue(data.balance || '0');
+        setEditValue(data.balance || '0');
+      }
+    } catch (error) {
+      console.error('[EditableBalanceKpi] Error fetching initial balance:', error);
+    }
+  };
+
   useEffect(() => {
     // Wait for auth state to be ready before fetching balance
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         fetchCurrentBalance();
+        fetchInitialBalance();
       }
     });
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    // Buscar saldo inicial quando o mês mudar
+    if (month) {
+      fetchInitialBalance();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month]);
 
   const fetchCurrentBalance = async () => {
     setLoadingBalance(true);
