@@ -9,9 +9,10 @@ type KpiProps = {
   trendValue?: string;
   editable?: boolean;
   onEdit?: () => void;
+  subValue?: React.ReactNode;
 };
 
-export function Kpi({ label, value, icon, trend = 'neutral', color = 'blue', trendValue, editable, onEdit }: KpiProps) {
+export function Kpi({ label, value, icon, trend = 'neutral', color = 'blue', trendValue, editable, onEdit, subValue }: KpiProps) {
   const colorClasses = {
     blue: 'from-blue-500 to-cyan-500',
     green: 'from-emerald-500 to-green-500',
@@ -72,6 +73,13 @@ export function Kpi({ label, value, icon, trend = 'neutral', color = 'blue', tre
         
         {/* Value */}
         <p className="text-white text-xl sm:text-2xl tracking-tight break-words">{value}</p>
+        
+        {/* Sub Value */}
+        {subValue && (
+          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/10">
+            <p className="text-white text-sm sm:text-lg tracking-tight break-words">{subValue}</p>
+          </div>
+        )}
       </div>
     </div>
   );
