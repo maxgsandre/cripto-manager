@@ -5,6 +5,8 @@ import { Kpi } from '@/components/Kpi';
 import { PnlLineChart } from '@/components/PnlLineChart';
 import InternalLayout from '@/components/InternalLayout';
 import EditableBalanceKpi from '@/components/EditableBalanceKpi';
+import { auth } from '@/lib/firebase/client';
+import { onAuthStateChanged } from 'firebase/auth';
 
 type TradeRow = { executedAt: string | Date; realizedPnl: string };
 type TradesResponse = {
@@ -37,16 +39,66 @@ function aggregateDaily(rows: TradeRow[]) {
 
 export default function DashboardPage() {
   const [data, setData] = useState<TradesResponse | null>(null);
+  const [currentBalanceBRL, setCurrentBalanceBRL] = useState('0');
+  const [loadingBalance, setLoadingBalance] = useState(false);
   const month = getMonth();
 
   useEffect(() => {
     fetchTrades(month).then(setData);
   }, [month]);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        fetchCurrentBalance();
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchCurrentBalance = async () => {
+    setLoadingBalance(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const token = await user.getIdToken();
+      const response = await fetch('/api/balance', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const balanceData = await response.json();
+        setCurrentBalanceBRL(balanceData.balance || '0');
+      }
+    } catch (error) {
+      console.error('Error fetching current balance:', error);
+    } finally {
+      setLoadingBalance(false);
+    }
+  };
+
   if (!data) return <InternalLayout><div className="text-white">Carregando...</div></InternalLayout>;
 
   const { summary, rows } = data;
   const daily = aggregateDaily(rows);
+
+  // Calcular ROI baseado no saldo da Binance
+  const calculateROIBinance = () => {
+    if (summary.initialBalance === '0' || loadingBalance) return null;
+    const initialBalance = Number(summary.initialBalance);
+    const currentBalance = Number(currentBalanceBRL);
+    if (initialBalance === 0) return null;
+    const roiBinance = ((currentBalance - initialBalance) / initialBalance) * 100;
+    const isPositive = roiBinance >= 0;
+    return (
+      <span className={isPositive ? 'text-green-400' : 'text-red-400'}>
+        ROI Binance: {isPositive ? '+' : ''}{roiBinance.toFixed(2)}%
+      </span>
+    );
+  };
 
   return (
     <InternalLayout>
@@ -91,6 +143,11 @@ export default function DashboardPage() {
           color="green"
           trend={Number(summary.pnlMonth) >= 0 ? 'up' : 'down'}
           trendValue={Number(summary.pnlMonth) >= 0 ? '+2.1%' : '-1.8%'}
+          subValue={
+            loadingBalance 
+              ? <span className="text-slate-400 animate-pulse">Carregando...</span>
+              : calculateROIBinance()
+          }
         />
         <Kpi 
           label="Total de Trades" 
