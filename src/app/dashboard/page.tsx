@@ -84,6 +84,10 @@ export default function DashboardPage() {
 
   const { summary, rows } = data;
   const daily = aggregateDaily(rows);
+  
+  // Calcular PnL de hoje
+  const today = new Date().toISOString().slice(0, 10);
+  const todayPnl = daily.find(d => d.date === today)?.pnl || 0;
 
   // Calcular ROI baseado no saldo da Binance
   const calculateROIBinance = () => {
@@ -185,9 +189,9 @@ export default function DashboardPage() {
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-xs text-slate-400">Hoje</p>
-              <p className="text-emerald-400 flex items-center gap-1">
-                <span>↗️</span>
-                R$ 70,00
+              <p className={`flex items-center gap-1 ${todayPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <span>{todayPnl >= 0 ? '↗️' : '↘️'}</span>
+                R$ {Math.abs(todayPnl).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           </div>
