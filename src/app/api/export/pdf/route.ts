@@ -61,18 +61,17 @@ export async function GET(req: NextRequest) {
   }
   const roi = bankroll === 0 ? 0 : pnl / bankroll;
 
-  // Build PDF (dynamic require to avoid bundling issues with Turbopack)
-  let PDFDocument: any;
-  if (typeof require !== 'undefined') {
-    PDFDocument = require('pdfkit');
-  } else {
-    const pdfkitModule = await import('pdfkit');
-    PDFDocument = pdfkitModule.default || pdfkitModule;
-  }
+  // Build PDF (dynamic import to avoid bundling issues with Turbopack)
+  const pdfkitModule = await import('pdfkit');
+  const PDFDocument = pdfkitModule.default || pdfkitModule;
   
   const doc = new PDFDocument({ size: 'A4', margin: 48 });
   const chunks: Buffer[] = [];
-  doc.on('data', (c: Buffer) => chunks.push(c));
+  doc.on('data', (c: unknown) => {
+    if (Buffer.isBuffer(c)) {
+      chunks.push(c);
+    }
+  });
 
   doc.fontSize(18).text('Relatório - Binance Manager', { align: 'center' });
   doc.moveDown(0.5);
@@ -91,10 +90,9 @@ export async function GET(req: NextRequest) {
   doc.moveDown();
 
   doc.fontSize(14).text('Observações');
-  doc.fontSize(10).list([
-    'ROI usa caixa acumulada por Cashflow (depósitos - saques) até o fim do mês.',
-    'Relatório não considera marcação a mercado; apenas realizedPnl.',
-  ]);
+  doc.fontSize(10);
+  doc.text('• ROI usa caixa acumulada por Cashflow (depósitos - saques) até o fim do mês.');
+  doc.text('• Relatório não considera marcação a mercado; apenas realizedPnl.');
 
   doc.end();
 
