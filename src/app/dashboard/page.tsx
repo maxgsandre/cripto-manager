@@ -100,6 +100,20 @@ export default function DashboardPage() {
     );
   };
 
+  // Calcular PnL baseado no saldo da Binance (diferença entre saldo atual e inicial)
+  const calculatePnLBinance = () => {
+    if (summary.initialBalance === '0' || loadingBalance) return null;
+    const initialBalance = Number(summary.initialBalance);
+    const currentBalance = Number(currentBalanceBRL);
+    const pnlBinance = currentBalance - initialBalance;
+    const isPositive = pnlBinance >= 0;
+    return (
+      <span className={isPositive ? 'text-green-400' : 'text-red-400'}>
+        PnL Binance: {isPositive ? '+' : ''}R$ {pnlBinance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </span>
+    );
+  };
+
   return (
     <InternalLayout>
       <div className="space-y-4 sm:space-y-6 lg:space-y-8">
@@ -132,6 +146,11 @@ export default function DashboardPage() {
           color="blue"
           trend={Number(summary.pnlMonth) >= 0 ? 'up' : 'down'}
           trendValue={Number(summary.pnlMonth) >= 0 ? '+12.5%' : '-5.2%'}
+          subValue={
+            loadingBalance 
+              ? <span className="text-slate-400 animate-pulse">Carregando...</span>
+              : calculatePnLBinance()
+          }
         />
         <Kpi 
           label="ROI Acumulado" 
