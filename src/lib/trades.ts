@@ -134,8 +134,8 @@ export async function getTrades(
     let monthToSearch: string;
     
     if (query.startDate && query.endDate) {
-      // Período customizado: usar o mês do startDate (primeiro mês do período)
-      monthToSearch = query.startDate.substring(0, 7); // Extrai YYYY-MM de YYYY-MM-DD
+      // Período customizado: usar o mês do endDate (último mês do período, onde geralmente há mais trades)
+      monthToSearch = query.endDate.substring(0, 7); // Extrai YYYY-MM de YYYY-MM-DD
     } else if (query.month) {
       // Se o month contém underscore (formato customizado), extrair o primeiro mês
       if (query.month.includes('_')) {
