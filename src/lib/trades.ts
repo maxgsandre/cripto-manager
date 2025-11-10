@@ -130,9 +130,29 @@ export async function getTrades(
   // Buscar saldo inicial do mês (se existir)
   let balanceBRL = '0';
   try {
+    // Determinar qual mês usar para buscar o saldo inicial
+    let monthToSearch: string;
+    
+    if (query.startDate && query.endDate) {
+      // Período customizado: usar o mês do startDate (primeiro mês do período)
+      monthToSearch = query.startDate.substring(0, 7); // Extrai YYYY-MM de YYYY-MM-DD
+    } else if (query.month) {
+      // Se o month contém underscore (formato customizado), extrair o primeiro mês
+      if (query.month.includes('_')) {
+        const firstPart = query.month.split('_')[0];
+        monthToSearch = firstPart.substring(0, 7); // Garantir formato YYYY-MM
+      } else {
+        monthToSearch = query.month.substring(0, 7); // Garantir formato YYYY-MM
+      }
+    } else {
+      // Fallback: usar o mês atual
+      const now = new Date();
+      monthToSearch = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    
     // Buscar todos os saldos do mês (não precisamos do userId aqui pois é um resumo geral)
     const monthlyBalances = await prisma.monthlyBalance.findMany({
-      where: { month: query.month }
+      where: { month: monthToSearch }
     });
     
     // Pegar o último saldo salvo (mais recente)
