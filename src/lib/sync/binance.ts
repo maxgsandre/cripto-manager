@@ -246,8 +246,35 @@ export async function syncAccount(
       });
     }
 
-    // Criar mapa para rastrear posições (compra e venda)
+    // Buscar compras anteriores no banco para calcular PnL corretamente
+    // Buscar todas as compras (BUY) anteriores ao período sincronizado
+    const existingBuys = await prisma.trade.findMany({
+      where: {
+        accountId: acc.id,
+        side: 'BUY',
+        executedAt: { lt: new Date(startTimestamp) }
+      },
+      orderBy: { executedAt: 'asc' }
+    });
+
+    // Criar mapa de posições a partir das compras existentes no banco
     const positions = new Map<string, Array<{ qty: number; price: number; isBuyer: boolean; time: number }>>();
+    
+    for (const buy of existingBuys) {
+      const symbol = buy.symbol;
+      if (!positions.has(symbol)) {
+        positions.set(symbol, []);
+      }
+      positions.get(symbol)!.push({
+        qty: Number(buy.qty),
+        price: Number(buy.price),
+        isBuyer: true,
+        time: buy.executedAt.getTime()
+      });
+    }
+
+    // Ordenar trades por data (mais antigo primeiro) para calcular PnL corretamente
+    allTrades.sort((a, b) => a.time - b.time);
 
     for (const trade of allTrades) {
       const tradeId = trade.id || `${trade.orderId}_${trade.symbol}`;
@@ -280,12 +307,12 @@ export async function syncAccount(
       let realizedPnl = trade.realizedPnl || '0';
       
       if (side === 'SELL' && qty > 0 && price > 0) {
-        // Buscar compras anteriores (FIFO)
+        // Buscar compras anteriores (FIFO - First In, First Out)
         let remainingQty = qty;
         let totalPnL = 0;
         
-        // Remover compras antigas e calcular PnL
-        for (let i = symbolPositions.length - 1; i >= 0 && remainingQty > 0; i--) {
+        // Processar do início ao fim (primeira compra primeiro)
+        for (let i = 0; i < symbolPositions.length && remainingQty > 0; i++) {
           const pos = symbolPositions[i];
           if (pos.isBuyer && pos.qty > 0) {
             const qtyToUse = Math.min(pos.qty, remainingQty);
@@ -297,6 +324,7 @@ export async function syncAccount(
             
             if (pos.qty <= 0) {
               symbolPositions.splice(i, 1);
+              i--; // Ajustar índice após remover elemento
             }
           }
         }
@@ -359,7 +387,7 @@ export async function syncAccount(
               feeValue: trade.commission,
               feeAsset: trade.commissionAsset,
               feePct: '0', // TODO: Calcular percentual de fee
-              realizedPnl: trade.realizedPnl || '0',
+              realizedPnl: realizedPnl, // Usar o PnL calculado, não o da API
               orderId: trade.orderId.toString(),
               tradeId: String(tradeId),
               orderType: orderType,

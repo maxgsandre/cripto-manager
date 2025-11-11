@@ -305,6 +305,38 @@ export default function TradesPage() {
     return option ? option.label : '📅 Este Mês';
   };
 
+  const recalculatePnL = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+      
+      if (!confirm('Recalcular PnL de todos os trades? Isso pode levar alguns minutos.')) {
+        return;
+      }
+
+      const token = await user.getIdToken();
+      const response = await fetch('/api/jobs/recalculate-pnl', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const result = await response.json();
+      
+      if (result.error) {
+        alert(`Erro: ${result.error}`);
+        return;
+      }
+
+      alert(`PnL recalculado! ${result.updated || 0} trades atualizados.`);
+      window.location.reload();
+    } catch (error) {
+      alert(`Erro ao recalcular PnL: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
+
   const syncTrades = async () => {
     try {
       const user = auth.currentUser;
@@ -636,13 +668,22 @@ export default function TradesPage() {
           <h1 className="text-3xl text-white mb-2">Trades</h1>
           <p className="text-slate-400">Histórico detalhado de operações</p>
         </div>
-        <button 
-          onClick={() => setShowSyncModal(true)}
-          className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
-        >
-          <span>🔄</span>
-          Sincronizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={recalculatePnL}
+            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
+          >
+            <span>💰</span>
+            Recalcular PnL
+          </button>
+          <button 
+            onClick={() => setShowSyncModal(true)}
+            className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
+          >
+            <span>🔄</span>
+            Sincronizar
+          </button>
+        </div>
       </div>
       
       <Toolbar>
