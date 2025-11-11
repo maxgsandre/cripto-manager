@@ -18,6 +18,13 @@ export interface TradesSummary {
   tradesCount: number;
   winRate: number; // 0..1
   initialBalance: string; // saldo inicial do mês
+  bestTrade: string; // melhor trade (maior PnL)
+  worstTrade: string; // pior trade (menor PnL)
+  totalVolume: string; // volume total
+  maxDrawdown: string; // maior drawdown
+  currentDrawdown: string; // drawdown atual
+  winningTrades: number; // número de trades vencedores
+  losingTrades: number; // número de trades perdedores
 }
 
 export interface PaginatedResult<Row> {

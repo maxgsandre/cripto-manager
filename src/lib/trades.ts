@@ -69,6 +69,7 @@ export async function getTrades(
   const pageSize = Math.min(200, Math.max(1, Number(query.pageSize ?? 20)));
 
   const total = await prisma.trade.count({ where });
+  
   type DbTrade = {
     id: string;
     accountId: string;
@@ -87,27 +88,64 @@ export async function getTrades(
     orderType?: string | null;
     executedAt: Date;
   };
+
+  // Buscar TODOS os trades filtrados para calcular o summary (sem paginação)
+  const allFilteredTrades: DbTrade[] = (await prisma.trade.findMany({
+    where,
+    orderBy: { executedAt: 'asc' }, // Ordenar por data para calcular drawdown corretamente
+  })) as unknown as DbTrade[];
+
+  // Calcular summary com TODOS os trades filtrados
+  let pnl = 0;
+  let fees = 0;
+  let feePctSum = 0;
+  let wins = 0;
+  let bestTrade = 0;
+  let worstTrade = 0;
+  let totalVolume = 0;
+  let maxDrawdown = 0;
+  let currentDrawdown = 0;
+  let peak = 0;
+  let runningPnL = 0;
+
+  for (const t of allFilteredTrades) {
+    const realized = toNumber(t.realizedPnl);
+    const qty = toNumber(t.qty);
+    const price = toNumber(t.price);
+    
+    pnl += realized;
+    const feeVal = toNumber(t.feeValue);
+    fees += feeVal;
+    feePctSum += toNumber(t.feePct);
+    if (realized > 0) wins += 1;
+    
+    // Calcular melhor e pior trade
+    if (realized > bestTrade) bestTrade = realized;
+    if (realized < worstTrade) worstTrade = realized;
+    
+    // Calcular volume total
+    totalVolume += qty * price;
+    
+    // Calcular drawdown
+    runningPnL += realized;
+    if (runningPnL > peak) {
+      peak = runningPnL;
+      currentDrawdown = 0;
+    } else {
+      currentDrawdown = peak - runningPnL;
+      if (currentDrawdown > maxDrawdown) {
+        maxDrawdown = currentDrawdown;
+      }
+    }
+  }
+
+  // Buscar apenas os trades da página atual para exibir na tabela
   const trades: DbTrade[] = (await prisma.trade.findMany({
     where,
     orderBy: { executedAt: 'desc' },
     skip: (page - 1) * pageSize,
     take: pageSize,
   })) as unknown as DbTrade[];
-
-  // Summary
-  let pnl = 0;
-  let fees = 0;
-  let feePctSum = 0;
-  let wins = 0;
-
-  for (const t of trades) {
-    const realized = toNumber(t.realizedPnl);
-    pnl += realized;
-    const feeVal = toNumber(t.feeValue);
-    fees += feeVal;
-    feePctSum += toNumber(t.feePct);
-    if (realized > 0) wins += 1;
-  }
 
   const rows: TradeRow[] = trades.map((t) => ({
     id: t.id,
@@ -167,13 +205,22 @@ export async function getTrades(
     console.error('Erro ao buscar saldo inicial:', error);
   }
 
+  const losingTrades = total - wins;
+  
   const summary = {
     pnlMonth: pnl.toString(),
     feesTotal: fees.toString(),
-    avgFeePct: (trades.length > 0 ? (feePctSum / trades.length) : 0).toString(),
+    avgFeePct: (allFilteredTrades.length > 0 ? (feePctSum / allFilteredTrades.length) : 0).toString(),
     tradesCount: total,
     winRate: total > 0 ? wins / total : 0,
     initialBalance: balanceBRL,
+    bestTrade: bestTrade.toString(),
+    worstTrade: worstTrade.toString(),
+    totalVolume: totalVolume.toString(),
+    maxDrawdown: maxDrawdown.toString(),
+    currentDrawdown: currentDrawdown.toString(),
+    winningTrades: wins,
+    losingTrades: losingTrades,
   };
 
   return { rows, total, summary };

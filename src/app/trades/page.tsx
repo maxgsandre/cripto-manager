@@ -128,6 +128,21 @@ export default function TradesPage() {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<TradeRow[]>([]);
+  const [summary, setSummary] = useState<{
+    pnlMonth: string;
+    feesTotal: string;
+    avgFeePct: string;
+    tradesCount: number;
+    winRate: number;
+    initialBalance: string;
+    bestTrade: string;
+    worstTrade: string;
+    totalVolume: string;
+    maxDrawdown: string;
+    currentDrawdown: string;
+    winningTrades: number;
+    losingTrades: number;
+  } | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
@@ -179,6 +194,25 @@ export default function TradesPage() {
         tradeId?: string | null;
         orderType?: string | null;
       };
+      type ApiResponse = {
+        total: number;
+        rows: ApiTrade[];
+        summary: {
+          pnlMonth: string;
+          feesTotal: string;
+          avgFeePct: string;
+          tradesCount: number;
+          winRate: number;
+          initialBalance: string;
+          bestTrade: string;
+          worstTrade: string;
+          totalVolume: string;
+          maxDrawdown: string;
+          currentDrawdown: string;
+          winningTrades: number;
+          losingTrades: number;
+        };
+      };
       const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
       if (market) params.set('market', market);
       if (symbol) params.set('symbol', symbol);
@@ -199,8 +233,9 @@ export default function TradesPage() {
         }
       })
         .then((r) => r.json())
-        .then((d: { total: number; rows: ApiTrade[] }) => {
+        .then((d: ApiResponse) => {
           setTotal(d.total);
+          setSummary(d.summary);
           setRows(
             d.rows.map((t: ApiTrade) => ({
               executedAt: new Date(t.executedAt).toISOString(),
@@ -857,31 +892,31 @@ export default function TradesPage() {
       </Toolbar>
 
       {/* Métricas extras */}
-      {rows.length > 0 && (
+      {summary && (
         <div className="space-y-4">
           {/* Métricas principais */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-400">
-                {formatCurrency(rows.reduce((sum, r) => sum + Number(r.realizedPnl), 0))}
+                {formatCurrency(summary.pnlMonth)}
               </div>
               <div className="text-sm text-slate-400">PnL Total</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-400">
-                {rows.filter(r => Number(r.realizedPnl) > 0).length}
+                {summary.winningTrades}
               </div>
               <div className="text-sm text-slate-400">Trades Vencedores</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-red-400">
-                {rows.filter(r => Number(r.realizedPnl) < 0).length}
+                {summary.losingTrades}
               </div>
               <div className="text-sm text-slate-400">Trades Perdedores</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-purple-400">
-                {formatCurrency(rows.reduce((sum, r) => sum + Number(r.feeValue), 0))}
+                {formatCurrency(summary.feesTotal)}
               </div>
               <div className="text-sm text-slate-400">Taxas Totais</div>
             </div>
@@ -891,25 +926,25 @@ export default function TradesPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gradient-to-r from-emerald-500/10 to-green-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
               <div className="text-2xl font-bold text-emerald-400">
-                {formatCurrency(rows.reduce((sum, r) => sum + calculateVolume(r.qty, r.price), 0))}
+                {formatCurrency(summary.totalVolume)}
               </div>
               <div className="text-sm text-slate-400">Volume Total</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-orange-400">
-                {rows.length > 0 ? ((rows.filter(r => Number(r.realizedPnl) > 0).length / rows.length) * 100).toFixed(1) : 0}%
+                {(summary.winRate * 100).toFixed(1)}%
               </div>
               <div className="text-sm text-slate-400">Win Rate</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-400">
-                {rows.length > 0 ? formatCurrency(Math.max(...rows.map(r => Number(r.realizedPnl)))) : 'R$ 0,00'}
+                {formatCurrency(summary.bestTrade)}
               </div>
               <div className="text-sm text-slate-400">Melhor Trade</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-red-400">
-                {rows.length > 0 ? formatCurrency(Math.min(...rows.map(r => Number(r.realizedPnl)))) : 'R$ 0,00'}
+                {formatCurrency(summary.worstTrade)}
               </div>
               <div className="text-sm text-slate-400">Pior Trade</div>
             </div>
@@ -919,13 +954,13 @@ export default function TradesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gradient-to-r from-red-500/10 to-pink-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
               <div className="text-2xl font-bold text-red-400">
-                {formatCurrency(calculateDrawdown(rows).maxDrawdown)}
+                {formatCurrency(summary.maxDrawdown)}
               </div>
               <div className="text-sm text-slate-400">Max Drawdown</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-pink-400">
-                {formatCurrency(calculateDrawdown(rows).currentDrawdown)}
+                {formatCurrency(summary.currentDrawdown)}
               </div>
               <div className="text-sm text-slate-400">Drawdown Atual</div>
             </div>
