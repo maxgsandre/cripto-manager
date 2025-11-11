@@ -16,11 +16,20 @@ type TradesResponse = {
 };
 
 async function fetchTrades(month: string, startDate?: string, endDate?: string): Promise<TradesResponse> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  
+  const token = await user.getIdToken();
   const params = new URLSearchParams({ month });
   if (startDate) params.set('startDate', startDate);
   if (endDate) params.set('endDate', endDate);
   const url = `/api/trades?${params.toString()}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
   if (!res.ok) throw new Error('failed to fetch');
   return res.json();
 }
