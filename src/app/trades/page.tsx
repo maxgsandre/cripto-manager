@@ -942,7 +942,9 @@ export default function TradesPage() {
       {showSyncModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
-            <h3 className="text-xl text-white font-semibold mb-4">Configurar sincronização</h3>
+            <h3 className="text-xl text-white font-semibold mb-4">
+              {syncProgress !== null ? 'Sincronizando' : 'Configurar sincronização'}
+            </h3>
             
             {syncProgress !== null ? (
               <div className="space-y-4">
@@ -966,7 +968,13 @@ export default function TradesPage() {
                 </div>
                 {syncProgress.status === 'completed' && syncProgress.result && (
                   <div className="text-sm text-green-400">
-                    ✓ {syncProgress.result.inserted} inseridos, {syncProgress.result.updated} atualizados
+                    <div className="font-semibold mb-1">✓ Sincronização concluída!</div>
+                    <div>
+                      Total de trades encontrados: {syncProgress.result.inserted + syncProgress.result.updated}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      ({syncProgress.result.inserted} novos, {syncProgress.result.updated} atualizados)
+                    </div>
                   </div>
                 )}
                 {syncProgress.status === 'error' && (
