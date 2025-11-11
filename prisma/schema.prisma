@@ -113,3 +113,24 @@ model MonthlyBalance {
   
   @@unique([userId, month])
 }
+
+model SyncJob {
+  id          String   @id @default(cuid())
+  jobId       String   @unique
+  userId      String
+  totalSteps  Int      @default(0)
+  currentStep Int      @default(0)
+  currentSymbol String?
+  currentDate String?
+  status      String   // 'running' | 'completed' | 'error'
+  message     String?
+  resultInserted Int?  @default(0)
+  resultUpdated  Int?  @default(0)
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([jobId])
+  @@index([userId])
+  @@index([status])
+}
