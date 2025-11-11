@@ -5,6 +5,13 @@ import InternalLayout from '@/components/InternalLayout';
 import { auth } from '@/lib/firebase/client';
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 
+// Estender Window para incluir __syncPollInterval
+declare global {
+  interface Window {
+    __syncPollInterval?: NodeJS.Timeout | null;
+  }
+}
+
 type TradeRow = {
   executedAt: string;
   exchange: string;
@@ -241,7 +248,7 @@ export default function TradesPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (error) {
+    } catch {
       alert('Erro ao exportar CSV');
     }
   };
@@ -280,7 +287,7 @@ export default function TradesPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (error) {
+    } catch {
       alert('Erro ao exportar PDF');
     }
   };
@@ -345,7 +352,7 @@ export default function TradesPage() {
             const status = await statusResponse.json();
 
             if (status.error) {
-              clearInterval(pollInterval);
+              if (pollInterval) clearInterval(pollInterval);
               setSyncProgress(null);
               alert(`Erro: ${status.error}`);
               return;
@@ -387,16 +394,8 @@ export default function TradesPage() {
           }
         }, 1000); // Poll a cada 1 segundo
 
-        // Limpar intervalo quando o modal fechar
-        const cleanup = () => {
-          if (pollInterval) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-          }
-        };
-        
         // Armazenar cleanup no estado para poder limpar depois
-        (window as any).__syncPollInterval = pollInterval;
+        window.__syncPollInterval = pollInterval;
       } else {
         alert('Erro: jobId não retornado');
       }
@@ -945,7 +944,7 @@ export default function TradesPage() {
           <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
             <h3 className="text-xl text-white font-semibold mb-4">Configurar sincronização</h3>
             
-            {syncProgress ? (
+            {syncProgress !== null ? (
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1027,17 +1026,17 @@ export default function TradesPage() {
                   </button>
                   <button 
                     onClick={() => {
-                      if ((window as any).__syncPollInterval) {
-                        clearInterval((window as any).__syncPollInterval);
-                        (window as any).__syncPollInterval = null;
+                      if (window.__syncPollInterval) {
+                        clearInterval(window.__syncPollInterval);
+                        window.__syncPollInterval = null;
                       }
                       setShowSyncModal(false);
                       setSyncProgress(null);
                     }}
-                    disabled={syncProgress?.status === 'running'}
+                    disabled={false}
                     className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {syncProgress?.status === 'running' ? 'Aguarde...' : 'Cancelar'}
+                    Cancelar
                   </button>
                 </div>
               </div>
