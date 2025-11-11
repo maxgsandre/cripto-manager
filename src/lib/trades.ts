@@ -60,6 +60,7 @@ export async function getTrades(
 
   const where = {
     executedAt: { gte: start, lte: end },
+    ...(query.accountIds && query.accountIds.length > 0 ? { accountId: { in: query.accountIds } } : {}),
     ...(query.market ? { market: query.market } : {}),
     ...(query.symbol ? { symbol: query.symbol } : {}),
   };

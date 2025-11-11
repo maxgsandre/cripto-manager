@@ -8,6 +8,7 @@ export interface TradesQuery {
   symbol?: string;
   page?: number;
   pageSize?: number;
+  accountIds?: string[]; // IDs das contas do usuário para filtrar trades
 }
 
 export interface TradesSummary {
