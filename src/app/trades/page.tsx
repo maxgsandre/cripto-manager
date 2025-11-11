@@ -133,9 +133,20 @@ export default function TradesPage() {
   const [syncStartDate, setSyncStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [syncSymbols, setSyncSymbols] = useState('BTCBRL\nETHBRL\nBNBBRL');
+  const [showRecalcModal, setShowRecalcModal] = useState(false);
+  const [recalcStartDate, setRecalcStartDate] = useState('');
+  const [recalcEndDate, setRecalcEndDate] = useState('');
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{
+    jobId: string | null;
+    percent: number;
+    message: string;
+    status: 'running' | 'completed' | 'error';
+    result?: { inserted: number; updated: number };
+    error?: string;
+  } | null>(null);
+  const [recalcProgress, setRecalcProgress] = useState<{
     jobId: string | null;
     percent: number;
     message: string;
@@ -310,17 +321,17 @@ export default function TradesPage() {
       const user = auth.currentUser;
       if (!user) return;
       
-      if (!confirm('Recalcular PnL de todos os trades? Isso pode levar alguns minutos.')) {
-        return;
-      }
-
       const token = await user.getIdToken();
       const response = await fetch('/api/jobs/recalculate-pnl', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          startDate: recalcStartDate || undefined,
+          endDate: recalcEndDate || undefined
+        })
       });
       
       const result = await response.json();
@@ -330,10 +341,69 @@ export default function TradesPage() {
         return;
       }
 
-      alert(`PnL recalculado! ${result.updated || 0} trades atualizados.`);
-      window.location.reload();
+      if (result.jobId) {
+        setRecalcProgress({
+          jobId: result.jobId,
+          percent: 0,
+          message: 'Iniciando recálculo de PnL...',
+          status: 'running'
+        });
+
+        let pollInterval: NodeJS.Timeout | null = null;
+        pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            });
+            const status = await statusResponse.json();
+
+            if (status.error) {
+              if (pollInterval) clearInterval(pollInterval);
+              setRecalcProgress(null);
+              alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            setRecalcProgress({
+              jobId: status.jobId,
+              percent: status.percent || 0,
+              message: status.message || 'Processando...',
+              status: status.status,
+              result: status.result,
+              error: status.error
+            });
+
+            if (status.status === 'completed') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                if (status.result) {
+                  alert(`PnL recalculado! ${status.result.updated || 0} trades atualizados.`);
+                }
+                setRecalcProgress(null);
+                setShowRecalcModal(false);
+                window.location.reload();
+              }, 2000);
+            } else if (status.status === 'error') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                alert(`Erro no recálculo: ${status.error || 'Erro desconhecido'}`);
+                setRecalcProgress(null);
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Error polling status:', error);
+            if (pollInterval) clearInterval(pollInterval);
+          }
+        }, 1000);
+        window.__syncPollInterval = pollInterval;
+      } else {
+        alert('Erro: jobId não retornado');
+      }
     } catch (error) {
       alert(`Erro ao recalcular PnL: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      setRecalcProgress(null);
     }
   };
 
@@ -670,7 +740,7 @@ export default function TradesPage() {
         </div>
         <div className="flex items-center gap-2">
           <button 
-            onClick={recalculatePnL}
+            onClick={() => setShowRecalcModal(true)}
             className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
           >
             <span>💰</span>
@@ -1086,6 +1156,112 @@ export default function TradesPage() {
                     className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Recalcular PnL */}
+      {showRecalcModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
+            <h3 className="text-xl text-white font-semibold mb-4">
+              {recalcProgress !== null ? 'Recalculando PnL' : 'Configurar recálculo de PnL'}
+            </h3>
+            
+            {recalcProgress !== null ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-slate-300 text-sm">{recalcProgress.message}</span>
+                    <span className="text-slate-400 text-sm font-semibold">{recalcProgress.percent}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${
+                        recalcProgress.status === 'completed' 
+                          ? 'bg-green-500' 
+                          : recalcProgress.status === 'error'
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-purple-500 to-pink-500'
+                      }`}
+                      style={{ width: `${recalcProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
+                {recalcProgress.status === 'completed' && recalcProgress.result && (
+                  <div className="text-sm text-green-400">
+                    <div className="font-semibold mb-1">✓ Recálculo concluído!</div>
+                    <div>
+                      {recalcProgress.result.updated || 0} trades atualizados
+                    </div>
+                  </div>
+                )}
+                {recalcProgress.status === 'error' && (
+                  <div className="text-sm text-red-400">
+                    ✗ {recalcProgress.error || 'Erro desconhecido'}
+                  </div>
+                )}
+                {recalcProgress.status === 'running' && (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm">
+                    <div className="animate-spin">⏳</div>
+                    <span>Processando...</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">📅 Data inicial (opcional)</label>
+                  <input 
+                    type="date"
+                    value={recalcStartDate}
+                    onChange={(e) => setRecalcStartDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                    placeholder="Deixe vazio para todos os trades"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Deixe vazio para recalcular todos os trades</p>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">📅 Data final (opcional)</label>
+                  <input 
+                    type="date"
+                    value={recalcEndDate}
+                    onChange={(e) => setRecalcEndDate(e.target.value)}
+                    min={recalcStartDate}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                    placeholder="Deixe vazio para todos os trades"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Deixe vazio para recalcular todos os trades</p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={recalculatePnL}
+                    disabled={!!recalcProgress}
+                    className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Recalcular
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (window.__syncPollInterval) {
+                        clearInterval(window.__syncPollInterval);
+                        window.__syncPollInterval = null;
+                      }
+                      setShowRecalcModal(false);
+                      setRecalcProgress(null);
+                      setRecalcStartDate('');
+                      setRecalcEndDate('');
+                    }}
+                    disabled={recalcProgress?.status === 'running'}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {recalcProgress?.status === 'running' ? 'Aguarde...' : 'Cancelar'}
                   </button>
                 </div>
               </div>

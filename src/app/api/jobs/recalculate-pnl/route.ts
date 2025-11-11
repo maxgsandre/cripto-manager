@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createJobId, setProgress } from '@/lib/sync/progress';
 
 async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
   const authHeader = req.headers.get('authorization');
@@ -23,6 +24,10 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const body = await req.json().catch(() => ({}));
+    const startDate = body.startDate;
+    const endDate = body.endDate;
+
     // Buscar todas as contas do usuário
     const accounts = await prisma.binanceAccount.findMany({
       where: { userId },
@@ -34,76 +39,161 @@ export async function POST(req: NextRequest) {
     }
 
     const accountIds = accounts.map(acc => acc.id);
-    let totalUpdated = 0;
+    
+    // Criar jobId para rastrear progresso
+    const jobId = createJobId(userId);
 
-    // Para cada conta, recalcular PnL
-    for (const accountId of accountIds) {
-      // Buscar todos os trades da conta, ordenados por data (mais antigo primeiro)
-      const allTrades = await prisma.trade.findMany({
-        where: { accountId },
-        orderBy: { executedAt: 'asc' }
+    // Iniciar recálculo de forma assíncrona
+    (async () => {
+      let totalUpdated = 0;
+      let totalProcessed = 0;
+      let totalTrades = 0;
+
+      // Contar total de trades primeiro
+      for (const accountId of accountIds) {
+        const where: any = { accountId };
+        if (startDate && endDate) {
+          where.executedAt = {
+            gte: new Date(startDate + 'T00:00:00.000Z'),
+            lte: new Date(endDate + 'T23:59:59.999Z')
+          };
+        }
+        const count = await prisma.trade.count({ where });
+        totalTrades += count;
+      }
+
+      if (totalTrades === 0) {
+        await setProgress(jobId, {
+          jobId,
+          userId,
+          totalSteps: 0,
+          currentStep: 0,
+          status: 'completed',
+          message: 'Nenhum trade encontrado para recalcular',
+          result: { inserted: 0, updated: 0 }
+        });
+        return;
+      }
+
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: totalTrades,
+        currentStep: 0,
+        status: 'running',
+        message: `Iniciando recálculo de PnL para ${totalTrades} trades...`
       });
 
-      // Criar mapa de posições (compras) por símbolo
-      const positions = new Map<string, Array<{ qty: number; price: number; tradeId: string }>>();
-
-      for (const trade of allTrades) {
-        const symbol = trade.symbol;
-        const qty = Number(trade.qty);
-        const price = Number(trade.price);
-        const side = trade.side;
-
-        if (!positions.has(symbol)) {
-          positions.set(symbol, []);
+      // Para cada conta, recalcular PnL
+      for (const accountId of accountIds) {
+        const where: any = { accountId };
+        if (startDate && endDate) {
+          where.executedAt = {
+            gte: new Date(startDate + 'T00:00:00.000Z'),
+            lte: new Date(endDate + 'T23:59:59.999Z')
+          };
         }
-        const symbolPositions = positions.get(symbol)!;
 
-        if (side === 'BUY') {
-          // Adicionar compra às posições
-          symbolPositions.push({
-            qty,
-            price,
-            tradeId: trade.id
+        // Buscar todos os trades da conta, ordenados por data (mais antigo primeiro)
+        const allTrades = await prisma.trade.findMany({
+          where,
+          orderBy: { executedAt: 'asc' }
+        });
+
+        // Criar mapa de posições (compras) por símbolo
+        const positions = new Map<string, Array<{ qty: number; price: number; tradeId: string }>>();
+
+        for (const trade of allTrades) {
+          totalProcessed++;
+          
+          await setProgress(jobId, {
+            jobId,
+            userId,
+            totalSteps: totalTrades,
+            currentStep: totalProcessed,
+            status: 'running',
+            message: `Processando trade ${totalProcessed} de ${totalTrades}...`
           });
-        } else if (side === 'SELL' && qty > 0 && price > 0) {
-          // Calcular PnL usando FIFO
-          let remainingQty = qty;
-          let totalPnL = 0;
 
-          // Processar do início ao fim (primeira compra primeiro)
-          for (let i = 0; i < symbolPositions.length && remainingQty > 0; i++) {
-            const pos = symbolPositions[i];
-            if (pos.qty > 0) {
-              const qtyToUse = Math.min(pos.qty, remainingQty);
-              const pnl = (price - pos.price) * qtyToUse;
-              totalPnL += pnl;
+          const symbol = trade.symbol;
+          const qty = Number(trade.qty);
+          const price = Number(trade.price);
+          const side = trade.side;
 
-              pos.qty -= qtyToUse;
-              remainingQty -= qtyToUse;
+          if (!positions.has(symbol)) {
+            positions.set(symbol, []);
+          }
+          const symbolPositions = positions.get(symbol)!;
 
-              if (pos.qty <= 0) {
-                symbolPositions.splice(i, 1);
-                i--; // Ajustar índice após remover elemento
+          if (side === 'BUY') {
+            // Adicionar compra às posições
+            symbolPositions.push({
+              qty,
+              price,
+              tradeId: trade.id
+            });
+          } else if (side === 'SELL' && qty > 0 && price > 0) {
+            // Calcular PnL usando FIFO
+            let remainingQty = qty;
+            let totalPnL = 0;
+
+            // Processar do início ao fim (primeira compra primeiro)
+            for (let i = 0; i < symbolPositions.length && remainingQty > 0; i++) {
+              const pos = symbolPositions[i];
+              if (pos.qty > 0) {
+                const qtyToUse = Math.min(pos.qty, remainingQty);
+                const pnl = (price - pos.price) * qtyToUse;
+                totalPnL += pnl;
+
+                pos.qty -= qtyToUse;
+                remainingQty -= qtyToUse;
+
+                if (pos.qty <= 0) {
+                  symbolPositions.splice(i, 1);
+                  i--; // Ajustar índice após remover elemento
+                }
               }
             }
-          }
 
-          // Atualizar o PnL do trade
-          if (totalPnL !== Number(trade.realizedPnl)) {
-            await prisma.trade.update({
-              where: { id: trade.id },
-              data: { realizedPnl: totalPnL.toString() }
-            });
-            totalUpdated++;
+            // Atualizar o PnL do trade
+            if (totalPnL !== Number(trade.realizedPnl)) {
+              await prisma.trade.update({
+                where: { id: trade.id },
+                data: { realizedPnl: totalPnL.toString() }
+              });
+              totalUpdated++;
+            }
           }
         }
       }
-    }
 
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: totalTrades,
+        currentStep: totalTrades,
+        status: 'completed',
+        message: `Recálculo concluído! ${totalUpdated} trades atualizados`,
+        result: { inserted: 0, updated: totalUpdated }
+      });
+    })().catch(error => {
+      console.error('Error recalculating PnL:', error);
+      setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 0,
+        currentStep: 0,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    });
+
+    // Retornar jobId imediatamente
     return Response.json({
       ok: true,
-      message: `PnL recalculado para ${totalUpdated} trades`,
-      updated: totalUpdated
+      message: 'Recálculo de PnL iniciado',
+      jobId,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Error recalculating PnL:', error);
