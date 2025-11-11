@@ -186,7 +186,7 @@ export async function syncAccount(
     let currentStep = 0;
 
     if (jobId && userId) {
-      setProgress(jobId, {
+      await setProgress(jobId, {
         jobId,
         userId,
         totalSteps,
@@ -207,7 +207,7 @@ export async function syncAccount(
         try {
           currentStep++;
           if (jobId && userId) {
-            setProgress(jobId, {
+            await setProgress(jobId, {
               jobId,
               userId,
               totalSteps,
@@ -236,7 +236,7 @@ export async function syncAccount(
     let updated = 0;
 
     if (jobId && userId) {
-      setProgress(jobId, {
+      await setProgress(jobId, {
         jobId,
         userId,
         totalSteps,
@@ -376,7 +376,7 @@ export async function syncAccount(
     const result = { inserted, updated };
     
     if (jobId && userId) {
-      setProgress(jobId, {
+      await setProgress(jobId, {
         jobId,
         userId,
         totalSteps,
@@ -392,7 +392,7 @@ export async function syncAccount(
     console.error('Sync error:', error);
     
     if (jobId && userId) {
-      setProgress(jobId, {
+      await setProgress(jobId, {
         jobId,
         userId,
         totalSteps: 0,

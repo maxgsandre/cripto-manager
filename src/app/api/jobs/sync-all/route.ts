@@ -83,7 +83,7 @@ export async function POST(request: Request) {
 
       // Atualizar progresso final
       if (userId) {
-        setProgress(jobId, {
+        await setProgress(jobId, {
           jobId,
           userId,
           totalSteps: 0,
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
           currentStep: 0,
           status: 'error',
           error: error instanceof Error ? error.message : 'Unknown error'
-        });
+        }).catch(err => console.error('Error setting progress:', err));
       }
     });
 

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'jobId is required' }, { status: 400 });
   }
 
-  const progress = getProgress(jobId);
+  const progress = await getProgress(jobId);
 
   if (!progress) {
     return Response.json({ error: 'Job not found' }, { status: 404 });
