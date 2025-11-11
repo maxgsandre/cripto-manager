@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 import { getProxyUrl, proxyGet } from '@/lib/binanceProxyClient';
+import { setProgress } from './progress';
 import crypto from 'crypto';
 
 export interface SyncResult {
@@ -147,7 +148,9 @@ export async function syncAccount(
   startDate: string = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
   endDate: string = new Date().toISOString().split('T')[0], 
   symbols: string[] = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'],
-  authHeader?: string
+  authHeader?: string,
+  jobId?: string,
+  userId?: string
 ): Promise<SyncResult> {
   try {
     // Buscar conta no banco
@@ -177,21 +180,52 @@ export async function syncAccount(
     const endTimestamp = new Date(endDate + 'T23:59:59').getTime();
     const oneDayMs = 24 * 60 * 60 * 1000;
 
+    // Calcular total de steps para progresso
+    const days = Math.ceil((endTimestamp - startTimestamp) / oneDayMs);
+    const totalSteps = days * symbols.length;
+    let currentStep = 0;
+
+    if (jobId && userId) {
+      setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps,
+        currentStep: 0,
+        status: 'running',
+        message: 'Iniciando sincronização...'
+      });
+    }
+
     let allTrades: BinanceTrade[] = [];
     
     // Buscar dia por dia para respeitar limite de 24h da API
     for (let currentStart = startTimestamp; currentStart < endTimestamp; currentStart += oneDayMs) {
       const currentEnd = Math.min(currentStart + oneDayMs, endTimestamp);
+      const currentDateStr = new Date(currentStart).toISOString().split('T')[0];
       
       for (const symbol of symbols) {
         try {
-        console.log(`Buscando trades para ${symbol} de ${new Date(currentStart).toISOString().split('T')[0]}...`);
-        const trades = await fetchBinanceTrades(apiKey, apiSecret, account.market, symbol, currentStart, currentEnd, authHeader);
-        console.log(`API retornou ${trades.length} trades para ${symbol}`);
-        if (trades.length > 0) {
-          console.log('Exemplo de trade completo:', trades[0]);
-        }
-        allTrades = allTrades.concat(trades);
+          currentStep++;
+          if (jobId && userId) {
+            setProgress(jobId, {
+              jobId,
+              userId,
+              totalSteps,
+              currentStep,
+              currentSymbol: symbol,
+              currentDate: currentDateStr,
+              status: 'running',
+              message: `Buscando ${symbol} para ${currentDateStr}...`
+            });
+          }
+          
+          console.log(`Buscando trades para ${symbol} de ${currentDateStr}...`);
+          const trades = await fetchBinanceTrades(apiKey, apiSecret, account.market, symbol, currentStart, currentEnd, authHeader);
+          console.log(`API retornou ${trades.length} trades para ${symbol}`);
+          if (trades.length > 0) {
+            console.log('Exemplo de trade completo:', trades[0]);
+          }
+          allTrades = allTrades.concat(trades);
         } catch (error) {
           console.error(`Erro ao buscar trades para ${symbol}:`, error);
         }
@@ -200,6 +234,17 @@ export async function syncAccount(
 
     let inserted = 0;
     let updated = 0;
+
+    if (jobId && userId) {
+      setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps,
+        currentStep: totalSteps,
+        status: 'running',
+        message: `Processando ${allTrades.length} trades encontrados...`
+      });
+    }
 
     // Criar mapa para rastrear posições (compra e venda)
     const positions = new Map<string, Array<{ qty: number; price: number; isBuyer: boolean; time: number }>>();
@@ -328,9 +373,35 @@ export async function syncAccount(
       }
     }
 
-    return { inserted, updated };
+    const result = { inserted, updated };
+    
+    if (jobId && userId) {
+      setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps,
+        currentStep: totalSteps,
+        status: 'completed',
+        message: `Sincronização concluída! ${inserted} inseridos, ${updated} atualizados`,
+        result
+      });
+    }
+
+    return result;
   } catch (error) {
     console.error('Sync error:', error);
+    
+    if (jobId && userId) {
+      setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 0,
+        currentStep: 0,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+    
     throw error;
   }
 }

@@ -128,6 +128,14 @@ export default function TradesPage() {
   const [syncSymbols, setSyncSymbols] = useState('BTCUSDT\nETHUSDT\nBNBUSDT');
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{
+    jobId: string | null;
+    percent: number;
+    message: string;
+    status: 'running' | 'completed' | 'error';
+    result?: { inserted: number; updated: number };
+    error?: string;
+  } | null>(null);
 
   useEffect(() => {
     const currentMonth = period === 'custom' && startDate && endDate 
@@ -252,27 +260,88 @@ export default function TradesPage() {
       
       if (result.error) {
         alert(`Erro: ${result.error}`);
-      } else if (result.results && result.results.length > 0) {
-        const totalInserted = result.results.reduce((acc: number, r: { inserted: number }) => acc + (r.inserted || 0), 0);
-        const totalUpdated = result.results.reduce((acc: number, r: { updated: number }) => acc + (r.updated || 0), 0);
-        const total = totalInserted + totalUpdated;
+        return;
+      }
+
+      if (result.jobId) {
+        // Iniciar polling do progresso
+        setSyncProgress({
+          jobId: result.jobId,
+          percent: 0,
+          message: 'Iniciando sincronização...',
+          status: 'running'
+        });
+
+        // Polling do progresso
+        let pollInterval: NodeJS.Timeout | null = null;
+        pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            });
+            const status = await statusResponse.json();
+
+            if (status.error) {
+              clearInterval(pollInterval);
+              setSyncProgress(null);
+              alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            setSyncProgress({
+              jobId: status.jobId,
+              percent: status.percent || 0,
+              message: status.message || 'Processando...',
+              status: status.status,
+              result: status.result,
+              error: status.error
+            });
+
+            if (status.status === 'completed') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                if (status.result) {
+                  let message = `Sucesso! `;
+                  if (status.result.inserted > 0) message += `${status.result.inserted} novos trades inseridos`;
+                  if (status.result.inserted > 0 && status.result.updated > 0) message += ` e `;
+                  if (status.result.updated > 0) message += `${status.result.updated} trades atualizados`;
+                  alert(message);
+                }
+                setSyncProgress(null);
+                setShowSyncModal(false);
+                window.location.reload();
+              }, 2000);
+            } else if (status.status === 'error') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                alert(`Erro na sincronização: ${status.error || 'Erro desconhecido'}`);
+                setSyncProgress(null);
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Error polling status:', error);
+            if (pollInterval) clearInterval(pollInterval);
+          }
+        }, 1000); // Poll a cada 1 segundo
+
+        // Limpar intervalo quando o modal fechar
+        const cleanup = () => {
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        };
         
-        if (total > 0) {
-          let message = `Sucesso! `;
-          if (totalInserted > 0) message += `${totalInserted} novos trades inseridos`;
-          if (totalInserted > 0 && totalUpdated > 0) message += ` e `;
-          if (totalUpdated > 0) message += `${totalUpdated} trades atualizados`;
-          alert(message);
-          // Recarregar página para mostrar novos trades
-          window.location.reload();
-        } else {
-          alert('Nenhum trade encontrado para sincronizar no período selecionado');
-        }
+        // Armazenar cleanup no estado para poder limpar depois
+        (window as any).__syncPollInterval = pollInterval;
       } else {
-        alert('Nenhum trade encontrado para sincronizar');
+        alert('Erro: jobId não retornado');
       }
     } catch (error) {
       alert(`Erro ao sincronizar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      setSyncProgress(null);
     }
   };
 
@@ -815,52 +884,103 @@ export default function TradesPage() {
           <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
             <h3 className="text-xl text-white font-semibold mb-4">Configurar sincronização</h3>
             
-            <div className="space-y-4">
-              <div>
-                <label className="block text-slate-300 text-sm mb-2">Data inicial</label>
-                <input 
-                  type="date"
-                  value={syncStartDate}
-                  onChange={(e) => setSyncStartDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
-                />
+            {syncProgress ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-slate-300 text-sm">{syncProgress.message}</span>
+                    <span className="text-slate-400 text-sm font-semibold">{syncProgress.percent}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${
+                        syncProgress.status === 'completed' 
+                          ? 'bg-green-500' 
+                          : syncProgress.status === 'error'
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-blue-500 to-cyan-500'
+                      }`}
+                      style={{ width: `${syncProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
+                {syncProgress.status === 'completed' && syncProgress.result && (
+                  <div className="text-sm text-green-400">
+                    ✓ {syncProgress.result.inserted} inseridos, {syncProgress.result.updated} atualizados
+                  </div>
+                )}
+                {syncProgress.status === 'error' && (
+                  <div className="text-sm text-red-400">
+                    ✗ {syncProgress.error || 'Erro desconhecido'}
+                  </div>
+                )}
+                {syncProgress.status === 'running' && (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm">
+                    <div className="animate-spin">⏳</div>
+                    <span>Processando...</span>
+                  </div>
+                )}
               </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">Data inicial</label>
+                  <input 
+                    type="date"
+                    value={syncStartDate}
+                    onChange={(e) => setSyncStartDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                    disabled={!!syncProgress}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-slate-300 text-sm mb-2">Data final</label>
-                <input 
-                  type="date"
-                  value={syncEndDate}
-                  onChange={(e) => setSyncEndDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
-                />
-              </div>
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">Data final</label>
+                  <input 
+                    type="date"
+                    value={syncEndDate}
+                    onChange={(e) => setSyncEndDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                    disabled={!!syncProgress}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-slate-300 text-sm mb-2">Moedas (uma por linha)</label>
-                <textarea 
-                  value={syncSymbols}
-                  onChange={(e) => setSyncSymbols(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white h-32"
-                  placeholder="BTCUSDT&#10;ETHUSDT&#10;BNBUSDT"
-                />
-              </div>
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">Moedas (uma por linha)</label>
+                  <textarea 
+                    value={syncSymbols}
+                    onChange={(e) => setSyncSymbols(e.target.value)}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white h-32"
+                    placeholder="BTCUSDT&#10;ETHUSDT&#10;BNBUSDT"
+                    disabled={!!syncProgress}
+                  />
+                </div>
 
-              <div className="flex gap-3">
-                <button 
-                  onClick={syncTrades}
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
-                >
-                  Sincronizar
-                </button>
-                <button 
-                  onClick={() => setShowSyncModal(false)}
-                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
-                >
-                  Cancelar
-                </button>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={syncTrades}
+                    disabled={!!syncProgress}
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Sincronizar
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if ((window as any).__syncPollInterval) {
+                        clearInterval((window as any).__syncPollInterval);
+                        (window as any).__syncPollInterval = null;
+                      }
+                      setShowSyncModal(false);
+                      setSyncProgress(null);
+                    }}
+                    disabled={syncProgress?.status === 'running'}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {syncProgress?.status === 'running' ? 'Aguarde...' : 'Cancelar'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

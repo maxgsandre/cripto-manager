@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { syncAccount } from '@/lib/sync/binance';
+import { createJobId, setProgress } from '@/lib/sync/progress';
 
 async function getUserIdFromToken(authHeader: string | null): Promise<string | null> {
   if (!authHeader?.startsWith('Bearer ')) return null;
@@ -46,31 +47,74 @@ export async function POST(request: Request) {
       });
     }
 
-    const results = [] as { accountId: string; name: string; inserted: number; updated: number; error?: string }[];
+    // Criar jobId para rastrear progresso
+    const jobId = userId ? createJobId(userId) : createJobId('system');
     
-    for (const acc of accounts) {
-      try {
-        const r = await syncAccount({ id: acc.id, market: acc.market }, startDate, endDate, symbols, request.headers.get('authorization') || undefined);
-        results.push({ 
-          accountId: acc.id, 
-          name: acc.name,
-          ...r 
+    // Iniciar sincronização de forma assíncrona
+    (async () => {
+      const results = [] as { accountId: string; name: string; inserted: number; updated: number; error?: string }[];
+      
+      for (const acc of accounts) {
+        try {
+          const r = await syncAccount(
+            { id: acc.id, market: acc.market }, 
+            startDate, 
+            endDate, 
+            symbols, 
+            request.headers.get('authorization') || undefined,
+            jobId,
+            userId || undefined
+          );
+          results.push({ 
+            accountId: acc.id, 
+            name: acc.name,
+            ...r 
+          });
+        } catch (error) {
+          results.push({ 
+            accountId: acc.id, 
+            name: acc.name,
+            inserted: 0, 
+            updated: 0, 
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      // Atualizar progresso final
+      if (userId) {
+        setProgress(jobId, {
+          jobId,
+          userId,
+          totalSteps: 0,
+          currentStep: 0,
+          status: 'completed',
+          message: `Sincronização de ${accounts.length} conta(s) concluída!`,
+          result: {
+            inserted: results.reduce((sum, r) => sum + (r.inserted || 0), 0),
+            updated: results.reduce((sum, r) => sum + (r.updated || 0), 0)
+          }
         });
-      } catch (error) {
-        results.push({ 
-          accountId: acc.id, 
-          name: acc.name,
-          inserted: 0, 
-          updated: 0, 
+      }
+    })().catch(error => {
+      console.error('Async sync error:', error);
+      if (userId) {
+        setProgress(jobId, {
+          jobId,
+          userId: userId,
+          totalSteps: 0,
+          currentStep: 0,
+          status: 'error',
           error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
-    }
+    });
 
+    // Retornar jobId imediatamente
     return Response.json({ 
       ok: true, 
-      message: `Synced ${accounts.length} account(s)`,
-      results,
+      message: 'Sincronização iniciada',
+      jobId,
       timestamp: new Date().toISOString()
     });
 
