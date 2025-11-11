@@ -138,61 +138,80 @@ export default function TradesPage() {
   } | null>(null);
 
   useEffect(() => {
-    const currentMonth = period === 'custom' && startDate && endDate 
-      ? `${startDate}_${endDate}` 
-      : period === 'custom' 
-        ? month 
-        : getPeriodFilter(period);
-    
-    type ApiTrade = {
-      executedAt: string | Date;
-      exchange: string;
-      market: string;
-      symbol: string;
-      side: string;
-      qty: string;
-      price: string;
-      feeValue: string;
-      feeAsset: string;
-      feePct: string;
-      realizedPnl: string;
-      orderId?: string | null;
-      tradeId?: string | null;
-      orderType?: string | null;
+    const fetchData = async () => {
+      const currentMonth = period === 'custom' && startDate && endDate 
+        ? `${startDate}_${endDate}` 
+        : period === 'custom' 
+          ? month 
+          : getPeriodFilter(period);
+      
+      type ApiTrade = {
+        executedAt: string | Date;
+        exchange: string;
+        market: string;
+        symbol: string;
+        side: string;
+        qty: string;
+        price: string;
+        feeValue: string;
+        feeAsset: string;
+        feePct: string;
+        realizedPnl: string;
+        orderId?: string | null;
+        tradeId?: string | null;
+        orderType?: string | null;
+      };
+      const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
+      if (market) params.set('market', market);
+      if (symbol) params.set('symbol', symbol);
+      if (period === 'custom' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      }
+      
+      // Adicionar token de autenticação
+      const user = auth.currentUser;
+      if (!user) return;
+      
+      const token = await user.getIdToken();
+      fetch(`/api/trades?${params.toString()}`, { 
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+        .then((r) => r.json())
+        .then((d: { total: number; rows: ApiTrade[] }) => {
+          setTotal(d.total);
+          setRows(
+            d.rows.map((t: ApiTrade) => ({
+              executedAt: new Date(t.executedAt).toISOString(),
+              exchange: t.exchange,
+              market: t.market,
+              symbol: t.symbol,
+              side: t.side,
+              qty: t.qty,
+              price: t.price,
+              feeValue: t.feeValue,
+              feeAsset: t.feeAsset,
+              feePct: t.feePct,
+              realizedPnl: t.realizedPnl,
+              orderId: t.orderId ?? undefined,
+              tradeId: t.tradeId ?? undefined,
+              orderType: t.orderType ?? null,
+            }))
+          );
+        });
     };
-    const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
-    if (market) params.set('market', market);
-    if (symbol) params.set('symbol', symbol);
-    if (period === 'custom' && startDate && endDate) {
-      params.set('startDate', startDate);
-      params.set('endDate', endDate);
-    }
-    fetch(`/api/trades?${params.toString()}`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d: { total: number; rows: ApiTrade[] }) => {
-        setTotal(d.total);
-        setRows(
-          d.rows.map((t: ApiTrade) => ({
-            executedAt: new Date(t.executedAt).toISOString(),
-            exchange: t.exchange,
-            market: t.market,
-            symbol: t.symbol,
-            side: t.side,
-            qty: t.qty,
-            price: t.price,
-            feeValue: t.feeValue,
-            feeAsset: t.feeAsset,
-            feePct: t.feePct,
-            realizedPnl: t.realizedPnl,
-            orderId: t.orderId ?? undefined,
-            tradeId: t.tradeId ?? undefined,
-            orderType: t.orderType ?? null,
-          }))
-        );
-      });
+    
+    fetchData();
   }, [month, period, startDate, endDate, market, symbol, page, pageSize]);
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const token = await user.getIdToken();
     const currentMonth = period === 'custom' && startDate && endDate 
       ? `${startDate}_${endDate}` 
       : period === 'custom' 
@@ -205,10 +224,33 @@ export default function TradesPage() {
       params.set('startDate', startDate);
       params.set('endDate', endDate);
     }
-    window.open(`/api/export/csv?${params.toString()}`, '_blank');
+    
+    try {
+      const response = await fetch(`/api/export/csv?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trades_${currentMonth}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      alert('Erro ao exportar CSV');
+    }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const token = await user.getIdToken();
     const currentMonth = period === 'custom' && startDate && endDate 
       ? `${startDate}_${endDate}` 
       : period === 'custom' 
@@ -221,7 +263,26 @@ export default function TradesPage() {
       params.set('startDate', startDate);
       params.set('endDate', endDate);
     }
-    window.open(`/api/export/pdf?${params.toString()}`, '_blank');
+    
+    try {
+      const response = await fetch(`/api/export/pdf?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trades_${currentMonth}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      alert('Erro ao exportar PDF');
+    }
   };
 
   const periodOptions = [
