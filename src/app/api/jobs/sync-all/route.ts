@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const startDate = body.startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const endDate = body.endDate || new Date().toISOString().split('T')[0];
-    const symbols = body.symbols || ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'];
+    const symbols = body.symbols || ['BTCBRL', 'ETHBRL', 'BNBBRL'];
     
     // Tentar autenticação por usuário primeiro
     const authHeader = request.headers.get('authorization');

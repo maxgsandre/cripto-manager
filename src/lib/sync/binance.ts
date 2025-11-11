@@ -147,7 +147,7 @@ export async function syncAccount(
   account: { id: string; market: string }, 
   startDate: string = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
   endDate: string = new Date().toISOString().split('T')[0], 
-  symbols: string[] = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'],
+  symbols: string[] = ['BTCBRL', 'ETHBRL', 'BNBBRL'],
   authHeader?: string,
   jobId?: string,
   userId?: string

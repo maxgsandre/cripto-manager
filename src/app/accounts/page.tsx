@@ -16,7 +16,7 @@ export default function AccountsPage() {
   const [syncMessage, setSyncMessage] = useState('');
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncDays, setSyncDays] = useState(7);
-  const [syncSymbols, setSyncSymbols] = useState(['BTCUSDT', 'ETHUSDT', 'BNBUSDT']);
+  const [syncSymbols, setSyncSymbols] = useState(['BTCBRL', 'ETHBRL', 'BNBBRL']);
 
   const refresh = async () => {
     const user = auth.currentUser;
@@ -374,7 +374,7 @@ export default function AccountsPage() {
                   value={syncSymbols.join('\n')}
                   onChange={(e) => setSyncSymbols(e.target.value.split('\n').filter(s => s.trim()))}
                   className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white h-32"
-                  placeholder="BTCUSDT&#10;ETHUSDT&#10;BNBUSDT"
+                  placeholder="BTCBRL&#10;ETHBRL&#10;BNBBRL"
                 />
               </div>
 

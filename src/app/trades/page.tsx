@@ -125,7 +125,7 @@ export default function TradesPage() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [syncSymbols, setSyncSymbols] = useState('BTCUSDT\nETHUSDT\nBNBUSDT');
+  const [syncSymbols, setSyncSymbols] = useState('BTCBRL\nETHBRL\nBNBBRL');
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{
@@ -724,7 +724,7 @@ export default function TradesPage() {
           <input 
             value={symbol} 
             onChange={(e) => setSymbol(e.target.value)} 
-            placeholder="e.g. BTCUSDT" 
+            placeholder="e.g. BTCBRL" 
             className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
           />
         </div>
@@ -1012,7 +1012,7 @@ export default function TradesPage() {
                     value={syncSymbols}
                     onChange={(e) => setSyncSymbols(e.target.value)}
                     className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white h-32"
-                    placeholder="BTCUSDT&#10;ETHUSDT&#10;BNBUSDT"
+                    placeholder="BTCBRL&#10;ETHBRL&#10;BNBBRL"
                     disabled={!!syncProgress}
                   />
                 </div>
