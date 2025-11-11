@@ -112,40 +112,48 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    let monthParam: string | undefined;
-    let startDateParam: string | undefined;
-    let endDateParam: string | undefined;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setData(null);
+        return;
+      }
 
-    if (period === 'custom' && startDate && endDate) {
-      // Período customizado: usar startDate e endDate
-      monthParam = `${startDate}_${endDate}`;
-      startDateParam = startDate;
-      endDateParam = endDate;
-    } else if (period === 'month-select' && selectedMonth) {
-      // Mês selecionado: usar o mês escolhido
-      monthParam = selectedMonth;
-    } else {
-      // Outros períodos: usar getPeriodFilter
-      const periodFilter = getPeriodFilter(period);
-      monthParam = periodFilter.month;
-      startDateParam = periodFilter.startDate;
-      endDateParam = periodFilter.endDate;
-    }
+      // Buscar balance e saldo inicial
+      fetchCurrentBalance();
+      fetchCurrentMonthInitialBalance();
 
-    fetchTrades(monthParam || '', startDateParam, endDateParam)
-      .then(setData)
-      .catch(err => console.error('Error fetching trades:', err));
-  }, [period, startDate, endDate, selectedMonth]);
+      // Buscar trades
+      let monthParam: string | undefined;
+      let startDateParam: string | undefined;
+      let endDateParam: string | undefined;
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        fetchCurrentBalance();
-        fetchCurrentMonthInitialBalance();
+      if (period === 'custom' && startDate && endDate) {
+        // Período customizado: usar startDate e endDate
+        monthParam = `${startDate}_${endDate}`;
+        startDateParam = startDate;
+        endDateParam = endDate;
+      } else if (period === 'month-select' && selectedMonth) {
+        // Mês selecionado: usar o mês escolhido
+        monthParam = selectedMonth;
+      } else {
+        // Outros períodos: usar getPeriodFilter
+        const periodFilter = getPeriodFilter(period);
+        monthParam = periodFilter.month;
+        startDateParam = periodFilter.startDate;
+        endDateParam = periodFilter.endDate;
+      }
+
+      try {
+        const tradesData = await fetchTrades(monthParam || '', startDateParam, endDateParam);
+        setData(tradesData);
+      } catch (err) {
+        console.error('Error fetching trades:', err);
+        setData(null);
       }
     });
+
     return () => unsubscribe();
-  }, []);
+  }, [period, startDate, endDate, selectedMonth]);
 
   const fetchCurrentBalance = async () => {
     setLoadingBalance(true);
