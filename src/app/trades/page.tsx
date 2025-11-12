@@ -847,22 +847,23 @@ export default function TradesPage() {
   return (
     <InternalLayout>
       <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl text-white mb-2">Trades</h1>
-          <p className="text-slate-400">Histórico detalhado de operações</p>
+          <h1 className="text-2xl sm:text-3xl text-white mb-1 sm:mb-2">Trades</h1>
+          <p className="text-sm sm:text-base text-slate-400">Histórico detalhado de operações</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           <button 
             onClick={() => setShowRecalcModal(true)}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
+            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
           >
             <span>💰</span>
-            Recalcular PnL
+            <span className="hidden sm:inline">Recalcular PnL</span>
+            <span className="sm:hidden">Recalcular</span>
           </button>
           <button 
             onClick={() => setShowSyncModal(true)}
-            className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
+            className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
           >
             <span>🔄</span>
             Sincronizar
@@ -871,16 +872,16 @@ export default function TradesPage() {
       </div>
       
       <Toolbar>
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <label className="block text-sm font-medium text-slate-300 mb-1">⏰ Período</label>
           <div className="relative">
             <button
               type="button"
               onClick={() => setPeriodDropdownOpen(!periodDropdownOpen)}
-              className="w-full min-w-[180px] flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-4 py-2.5 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full sm:min-w-[180px] flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-4 py-2.5 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <span>{getPeriodLabel()}</span>
-              <span className={`transition-transform ${periodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+              <span className="truncate">{getPeriodLabel()}</span>
+              <span className={`transition-transform flex-shrink-0 ${periodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
             </button>
             {periodDropdownOpen && (
               <>
@@ -888,7 +889,7 @@ export default function TradesPage() {
                   className="fixed inset-0 z-10" 
                   onClick={() => setPeriodDropdownOpen(false)}
                 />
-                <div className="absolute z-20 mt-1 w-full bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                <div className="absolute z-20 mt-1 w-full sm:w-auto left-0 sm:left-auto right-0 sm:right-auto bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
                   {periodOptions.map((option) => (
                     <button
                       key={option.value}
@@ -930,7 +931,7 @@ export default function TradesPage() {
                   }
                 }}
               />
-              <div className="absolute top-full right-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 min-w-[200px]">
+              <div className="absolute top-full right-0 sm:right-0 left-0 sm:left-auto mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 w-full sm:w-auto min-w-[200px]">
                 <div className="flex flex-col">
                   <label className="text-sm font-medium text-slate-300 mb-2">📅 Selecionar Mês</label>
                   <input 
@@ -959,7 +960,7 @@ export default function TradesPage() {
                   }
                 }}
               />
-              <div className="absolute top-full right-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 flex flex-col gap-2 min-w-[250px]">
+              <div className="absolute top-full right-0 sm:right-0 left-0 sm:left-auto mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 flex flex-col gap-2 w-full sm:w-auto min-w-[250px]">
                 <div className="flex flex-col">
                   <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Inicial</label>
                   <input 
@@ -990,7 +991,7 @@ export default function TradesPage() {
             </>
           )}
         </div>
-        <div className="flex flex-col">
+        <div className="flex flex-col w-full sm:w-auto">
           <label className="text-sm font-medium text-slate-300 mb-1">🏪 Market</label>
           <input 
             value={market} 
@@ -999,7 +1000,7 @@ export default function TradesPage() {
             className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
           />
         </div>
-        <div className="flex flex-col">
+        <div className="flex flex-col w-full sm:w-auto">
           <label className="text-sm font-medium text-slate-300 mb-1">💰 Symbol</label>
           <input 
             value={symbol} 
@@ -1008,20 +1009,22 @@ export default function TradesPage() {
             className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
           />
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 w-full sm:w-auto">
           <button
             onClick={handleExportCSV}
-            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2"
+            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
           >
             <span>📊</span>
-            <span>Export CSV</span>
+            <span className="hidden sm:inline">Export CSV</span>
+            <span className="sm:hidden">CSV</span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2"
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
           >
             <span>📄</span>
-            <span>Export PDF</span>
+            <span className="hidden sm:inline">Export PDF</span>
+            <span className="sm:hidden">PDF</span>
           </button>
         </div>
       </Toolbar>
@@ -1044,74 +1047,74 @@ export default function TradesPage() {
       {summary && (
         <div className="space-y-4">
           {/* Métricas principais */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-3 sm:p-4 bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-400">
+              <div className="text-lg sm:text-2xl font-bold text-blue-400">
                 {formatCurrency(summary.pnlMonth)}
               </div>
-              <div className="text-sm text-slate-400">PnL Total</div>
+              <div className="text-xs sm:text-sm text-slate-400">PnL Total</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">
+              <div className="text-lg sm:text-2xl font-bold text-green-400">
                 {summary.winningTrades}
               </div>
-              <div className="text-sm text-slate-400">Trades Vencedores</div>
+              <div className="text-xs sm:text-sm text-slate-400">Trades Vencedores</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-lg sm:text-2xl font-bold text-red-400">
                 {summary.losingTrades}
               </div>
-              <div className="text-sm text-slate-400">Trades Perdedores</div>
+              <div className="text-xs sm:text-sm text-slate-400">Trades Perdedores</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-400">
+              <div className="text-lg sm:text-2xl font-bold text-purple-400">
                 {formatCurrency(summary.feesTotal)}
               </div>
-              <div className="text-sm text-slate-400">Taxas Totais</div>
+              <div className="text-xs sm:text-sm text-slate-400">Taxas Totais</div>
             </div>
           </div>
 
           {/* Métricas avançadas */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gradient-to-r from-emerald-500/10 to-green-500/5 backdrop-blur-sm rounded-lg border border-white/10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-3 sm:p-4 bg-gradient-to-r from-emerald-500/10 to-green-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-400">
+              <div className="text-lg sm:text-2xl font-bold text-emerald-400">
                 {formatCurrency(summary.totalVolume)}
               </div>
-              <div className="text-sm text-slate-400">Volume Total</div>
+              <div className="text-xs sm:text-sm text-slate-400">Volume Total</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-orange-400">
+              <div className="text-lg sm:text-2xl font-bold text-orange-400">
                 {(summary.winRate * 100).toFixed(1)}%
               </div>
-              <div className="text-sm text-slate-400">Win Rate</div>
+              <div className="text-xs sm:text-sm text-slate-400">Win Rate</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">
+              <div className="text-lg sm:text-2xl font-bold text-green-400">
                 {formatCurrency(summary.bestTrade)}
               </div>
-              <div className="text-sm text-slate-400">Melhor Trade</div>
+              <div className="text-xs sm:text-sm text-slate-400">Melhor Trade</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-lg sm:text-2xl font-bold text-red-400">
                 {formatCurrency(summary.worstTrade)}
               </div>
-              <div className="text-sm text-slate-400">Pior Trade</div>
+              <div className="text-xs sm:text-sm text-slate-400">Pior Trade</div>
             </div>
           </div>
 
           {/* Métricas de risco */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gradient-to-r from-red-500/10 to-pink-500/5 backdrop-blur-sm rounded-lg border border-white/10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 bg-gradient-to-r from-red-500/10 to-pink-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-lg sm:text-2xl font-bold text-red-400">
                 {formatCurrency(summary.maxDrawdown)}
               </div>
-              <div className="text-sm text-slate-400">Max Drawdown</div>
+              <div className="text-xs sm:text-sm text-slate-400">Max Drawdown</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-pink-400">
+              <div className="text-lg sm:text-2xl font-bold text-pink-400">
                 {formatCurrency(summary.currentDrawdown)}
               </div>
-              <div className="text-sm text-slate-400">Drawdown Atual</div>
+              <div className="text-xs sm:text-sm text-slate-400">Drawdown Atual</div>
             </div>
           </div>
         </div>
@@ -1168,22 +1171,22 @@ export default function TradesPage() {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/5 backdrop-blur-sm p-4 rounded-lg border border-white/10">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 bg-white/5 backdrop-blur-sm p-3 sm:p-4 rounded-lg border border-white/10">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start">
           <button 
-            className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2" 
+            className="bg-white/10 hover:bg-white/20 text-white px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm sm:text-base" 
             disabled={page <= 1} 
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             <span>←</span>
             <span className="hidden sm:inline">Anterior</span>
           </button>
-          <div className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg font-medium text-center min-w-[120px]">
-            <div className="text-sm">Página</div>
-            <div className="text-lg font-bold">{page} / {totalPages}</div>
+          <div className="px-3 sm:px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg font-medium text-center min-w-[100px] sm:min-w-[120px]">
+            <div className="text-xs sm:text-sm">Página</div>
+            <div className="text-base sm:text-lg font-bold">{page} / {totalPages}</div>
           </div>
           <button 
-            className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2" 
+            className="bg-white/10 hover:bg-white/20 text-white px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm sm:text-base" 
             disabled={page >= totalPages} 
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
           >
@@ -1191,16 +1194,16 @@ export default function TradesPage() {
             <span>→</span>
           </button>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-300 whitespace-nowrap">Itens por página:</label>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end">
+          <label className="text-xs sm:text-sm font-medium text-slate-300 whitespace-nowrap">Itens por página:</label>
           <div className="relative">
             <button
               type="button"
               onClick={() => setPageSizeDropdownOpen(!pageSizeDropdownOpen)}
-              className="min-w-[80px] flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="min-w-[70px] sm:min-w-[80px] flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
             >
               <span>{pageSize}</span>
-              <span className={`transition-transform ${pageSizeDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+              <span className={`transition-transform flex-shrink-0 ${pageSizeDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
             </button>
             {pageSizeDropdownOpen && (
               <>
@@ -1235,9 +1238,9 @@ export default function TradesPage() {
 
       {/* Modal de Sincronização */}
       {showSyncModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
-            <h3 className="text-xl text-white font-semibold mb-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+            <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
               {syncProgress !== null ? 'Sincronizando' : 'Configurar sincronização'}
             </h3>
             
@@ -1350,9 +1353,9 @@ export default function TradesPage() {
 
       {/* Modal de Recalcular PnL */}
       {showRecalcModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
-            <h3 className="text-xl text-white font-semibold mb-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+            <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
               {recalcProgress !== null ? 'Recalculando PnL' : 'Configurar recálculo de PnL'}
             </h3>
             
