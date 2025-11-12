@@ -521,6 +521,182 @@ export default function TradesPage() {
     }
   };
 
+  const [loadingSymbols, setLoadingSymbols] = useState(false);
+  const [symbolsProgress, setSymbolsProgress] = useState<{
+    jobId: string;
+    percent: number;
+    message: string;
+    status: 'running' | 'completed' | 'error';
+    estimatedTime?: string;
+    currentStep?: number;
+    totalSteps?: number;
+    result?: { inserted: number; updated: number };
+    error?: string;
+  } | null>(null);
+
+  const fetchTradedSymbols = async (includeApi: boolean = false, searchAll: boolean = false) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+      
+      if (searchAll) {
+        const confirmSearch = confirm(
+          '⚠️ ATENÇÃO: Buscar TODOS os pares pode demorar vários minutos e fazer muitas requisições à API da Binance.\n\n' +
+          'Deseja continuar?'
+        );
+        if (!confirmSearch) return;
+      }
+      
+      setLoadingSymbols(true);
+      
+      const token = await user.getIdToken();
+      const params = new URLSearchParams();
+      if (includeApi) {
+        params.set('includeApi', 'true');
+        if (searchAll) {
+          params.set('searchAll', 'true');
+        }
+      }
+      const url = `/api/symbols?${params.toString()}`;
+      
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        alert('Erro ao buscar pares negociados');
+        setLoadingSymbols(false);
+        return;
+      }
+      
+      const data = await response.json();
+      
+      // Se não for busca da API, retornar imediatamente
+      if (!includeApi) {
+        if (data.symbols && data.symbols.length > 0) {
+          setSyncSymbols(data.symbols.join('\n'));
+          alert(`✅ Encontrados ${data.count} pares negociados do banco de dados!`);
+        } else {
+          alert('Nenhum par negociado encontrado. Tente buscar também da API.');
+        }
+        setLoadingSymbols(false);
+        return;
+      }
+      
+      // Se for busca da API, iniciar polling do progresso
+      if (data.jobId) {
+        setSymbolsProgress({
+          jobId: data.jobId,
+          percent: 0,
+          message: 'Iniciando busca de símbolos...',
+          status: 'running'
+        });
+
+        // Polling do progresso
+        let pollInterval: NodeJS.Timeout | null = null;
+        pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/symbols?jobId=${data.jobId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            });
+            const status = await statusResponse.json();
+
+            if (status.error) {
+              if (pollInterval) clearInterval(pollInterval);
+              setSymbolsProgress(null);
+              setLoadingSymbols(false);
+              alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            setSymbolsProgress({
+              jobId: status.jobId,
+              percent: status.percent || 0,
+              message: status.message || 'Processando...',
+              status: status.status,
+              estimatedTime: status.estimatedTime,
+              currentStep: status.currentStep,
+              totalSteps: status.totalSteps,
+              result: status.result,
+              error: status.error
+            });
+
+            if (status.status === 'completed') {
+              if (pollInterval) clearInterval(pollInterval);
+              
+              // Buscar símbolos do resultado final
+              // Como os símbolos não estão no progresso, vamos buscar novamente sem API
+              const finalResponse = await fetch('/api/symbols', {
+                headers: {
+                  Authorization: `Bearer ${token}`
+                }
+              });
+              
+              if (finalResponse.ok) {
+                const finalData = await finalResponse.json();
+                if (finalData.symbols && finalData.symbols.length > 0) {
+                  setSyncSymbols(finalData.symbols.join('\n'));
+                  let message = '';
+                  if (status.result && status.result.inserted > 0) {
+                    message = `✅ Busca concluída! Encontrados ${finalData.symbols.length} pares negociados (${finalData.dbCount || 0} do banco + ${status.result.inserted} da API)`;
+                  } else {
+                    message = `✅ Busca concluída! Encontrados ${finalData.symbols.length} pares negociados`;
+                  }
+                  alert(message);
+                }
+              }
+              
+              setTimeout(() => {
+                setSymbolsProgress(null);
+                setLoadingSymbols(false);
+              }, 2000);
+            } else if (status.status === 'error') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                alert(`Erro na busca: ${status.error || 'Erro desconhecido'}`);
+                setSymbolsProgress(null);
+                setLoadingSymbols(false);
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Error polling symbol status:', error);
+            if (pollInterval) clearInterval(pollInterval);
+            setSymbolsProgress(null);
+            setLoadingSymbols(false);
+          }
+        }, 1000); // Poll a cada 1 segundo
+      } else {
+        // Fallback para resposta direta (caso não use jobId)
+        if (data.symbols && data.symbols.length > 0) {
+          setSyncSymbols(data.symbols.join('\n'));
+          let message = '';
+          if (includeApi && data.apiCount > 0) {
+            if (searchAll) {
+              message = `✅ Encontrados ${data.count} pares negociados! (${data.dbCount} do banco + ${data.apiCount} da API - busca completa)`;
+            } else {
+              message = `✅ Encontrados ${data.count} pares negociados! (${data.dbCount} do banco + ${data.apiCount} da API - apenas comuns)`;
+            }
+          } else {
+            message = `✅ Encontrados ${data.count} pares negociados do banco de dados!`;
+          }
+          alert(message);
+        } else {
+          alert('Nenhum par negociado encontrado. Tente buscar também da API.');
+        }
+        setLoadingSymbols(false);
+      }
+    } catch (error) {
+      console.error('Error fetching symbols:', error);
+      alert('Erro ao buscar pares negociados');
+      setLoadingSymbols(false);
+      setSymbolsProgress(null);
+    }
+  };
+
   const syncTrades = async () => {
     try {
       const user = auth.currentUser;
@@ -1312,7 +1488,64 @@ export default function TradesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 text-sm mb-2">Moedas (uma por linha)</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-slate-300 text-sm">Moedas (uma por linha)</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fetchTradedSymbols(false)}
+                        disabled={!!syncProgress || loadingSymbols}
+                        className="text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loadingSymbols ? '⏳' : '🔍'} Banco
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fetchTradedSymbols(true, false)}
+                        disabled={!!syncProgress || loadingSymbols}
+                        className="text-xs bg-green-500/20 hover:bg-green-500/30 text-green-400 px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loadingSymbols ? '⏳' : '🌐'} API Comuns
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fetchTradedSymbols(true, true)}
+                        disabled={!!syncProgress || loadingSymbols}
+                        className="text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Busca TODOS os pares disponíveis na Binance (pode demorar vários minutos)"
+                      >
+                        {loadingSymbols ? '⏳' : '🚀'} Todos
+                      </button>
+                    </div>
+                  </div>
+                  {symbolsProgress && (
+                    <div className="mb-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-blue-300 font-medium">
+                          {symbolsProgress.message}
+                        </span>
+                        {symbolsProgress.estimatedTime && (
+                          <span className="text-xs text-blue-400">
+                            {symbolsProgress.estimatedTime}
+                          </span>
+                        )}
+                      </div>
+                      <div className="w-full bg-slate-700/50 rounded-full h-2.5 overflow-hidden">
+                        <div 
+                          className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2.5 rounded-full transition-all duration-300"
+                          style={{ width: `${symbolsProgress.percent}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs text-blue-400">
+                          {symbolsProgress.currentStep || 0} / {symbolsProgress.totalSteps || 0} lotes
+                        </span>
+                        <span className="text-xs text-blue-300 font-semibold">
+                          {symbolsProgress.percent}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <textarea 
                     value={syncSymbols}
                     onChange={(e) => setSyncSymbols(e.target.value)}
@@ -1320,6 +1553,11 @@ export default function TradesPage() {
                     placeholder="BTCBRL&#10;ETHBRL&#10;BNBBRL"
                     disabled={!!syncProgress}
                   />
+                  <p className="text-xs text-slate-400 mt-1">
+                    <strong>Banco:</strong> Rápido (apenas sincronizados) | 
+                    <strong> API Comuns:</strong> Testa ~32 pares comuns | 
+                    <strong> Todos:</strong> Testa TODOS os pares disponíveis (pode demorar muito)
+                  </p>
                 </div>
 
                 <div className="flex gap-3">
