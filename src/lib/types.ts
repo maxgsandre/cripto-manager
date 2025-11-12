@@ -9,6 +9,7 @@ export interface TradesQuery {
   page?: number;
   pageSize?: number;
   accountIds?: string[]; // IDs das contas do usuário para filtrar trades
+  userId?: string; // ID do usuário para filtrar saldo inicial
 }
 
 export interface TradesSummary {

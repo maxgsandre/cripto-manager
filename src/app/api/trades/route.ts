@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
       symbol, 
       page, 
       pageSize,
-      accountIds // Passar accountIds para filtrar apenas trades do usuário
+      accountIds, // Passar accountIds para filtrar apenas trades do usuário
+      userId // Passar userId para filtrar saldo inicial do usuário
     });
     return Response.json(data, { status: 200 });
   } catch (err) {
