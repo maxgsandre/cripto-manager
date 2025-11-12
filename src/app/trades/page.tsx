@@ -166,6 +166,16 @@ export default function TradesPage() {
   const [showRecalcModal, setShowRecalcModal] = useState(false);
   const [recalcStartDate, setRecalcStartDate] = useState('');
   const [recalcEndDate, setRecalcEndDate] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePeriod, setDeletePeriod] = useState('month');
+  const [deleteStartDate, setDeleteStartDate] = useState('');
+  const [deleteEndDate, setDeleteEndDate] = useState('');
+  const [deleteSelectedMonth, setDeleteSelectedMonth] = useState('');
+  const [deleteMarket, setDeleteMarket] = useState('');
+  const [deleteSymbol, setDeleteSymbol] = useState('');
+  const [deletePeriodDropdownOpen, setDeletePeriodDropdownOpen] = useState(false);
+  const [deleteMonthSelectOpen, setDeleteMonthSelectOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
   const [customDateOpen, setCustomDateOpen] = useState(false);
   const [monthSelectOpen, setMonthSelectOpen] = useState(false);
@@ -227,12 +237,25 @@ export default function TradesPage() {
     fetchEarliestDate();
   }, []);
 
+  const [incompleteJobs, setIncompleteJobs] = useState<Array<{
+    jobId: string;
+    currentStep: number;
+    totalSteps: number;
+    message: string | null;
+    updatedAt: string;
+  }>>([]);
+
+  // Buscar contas e jobs incompletos quando o modal de importação for aberto
   useEffect(() => {
-    const fetchAccounts = async () => {
+    if (!showImportModal) return; // Só buscar quando o modal estiver aberto
+
+    const fetchData = async () => {
       const user = auth.currentUser;
       if (!user) return;
 
       const token = await user.getIdToken();
+      
+      // Buscar contas
       try {
         const res = await fetch('/api/accounts', {
           headers: {
@@ -242,18 +265,42 @@ export default function TradesPage() {
 
         if (res.ok) {
           const data = await res.json();
-          setAccounts(data.results || []);
-          if (data.results && data.results.length > 0 && !importAccountId) {
-            setImportAccountId(data.results[0].id);
+          const accountsList = data.results || [];
+          setAccounts(accountsList);
+          
+          if (accountsList.length > 0 && !importAccountId) {
+            setImportAccountId(accountsList[0].id);
           }
         }
       } catch (error) {
         console.error('Error fetching accounts:', error);
       }
+
+      // Buscar jobs incompletos (erro ou running há muito tempo)
+      try {
+        const jobsRes = await fetch('/api/jobs/stuck?all=true', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (jobsRes.ok) {
+          const jobsData = await jobsRes.json();
+          // Filtrar apenas jobs de importação CSV (pode identificar pela message)
+          const importJobs = (jobsData.jobs || []).filter((job: any) => 
+            job.message?.includes('Processando linha') || 
+            job.message?.includes('Importação') ||
+            job.message?.includes('CSV')
+          );
+          setIncompleteJobs(importJobs);
+        }
+      } catch (error) {
+        console.error('Error fetching incomplete jobs:', error);
+      }
     };
 
-    fetchAccounts();
-  }, [importAccountId]);
+    fetchData();
+  }, [showImportModal]); // Buscar sempre que o modal for aberto
 
   useEffect(() => {
     const fetchData = async () => {
@@ -978,19 +1025,34 @@ export default function TradesPage() {
   type DisplayRow = TradeRow & { _isGroup?: boolean; _isChild?: boolean; _childrenCount?: number };
 
   // Agrupar por orderId quando houver multiplas execucoes
+  // Também agrupar trades sem orderId mas com características similares (mesmo timestamp+symbol+side+price+qty)
   const groupedRows: DisplayRow[] = useMemo(() => {
     const byOrder: Record<string, TradeRow[]> = {};
+    const byUniqueKey: Record<string, TradeRow[]> = {}; // Para trades sem orderId
+    
     for (const r of rows) {
       if (r.orderId) {
+        // Agrupar por orderId
         if (!byOrder[r.orderId]) byOrder[r.orderId] = [];
         byOrder[r.orderId].push(r);
+      } else {
+        // Agrupar por chave única (timestamp+symbol+side+price+qty)
+        const timestamp = Math.floor(new Date(r.executedAt).getTime() / 1000);
+        const price = parseFloat(r.price || '0').toFixed(8);
+        const qty = parseFloat(r.qty || '0').toFixed(8);
+        const uniqueKey = `${timestamp}_${r.symbol}_${r.side}_${price}_${qty}`;
+        
+        if (!byUniqueKey[uniqueKey]) byUniqueKey[uniqueKey] = [];
+        byUniqueKey[uniqueKey].push(r);
       }
     }
 
     const out: DisplayRow[] = [];
     const emitted = new Set<string>();
+    const emittedUniqueKeys = new Set<string>();
 
     for (const r of rows) {
+      // Agrupar por orderId (prioridade)
       if (r.orderId && byOrder[r.orderId] && byOrder[r.orderId].length > 1) {
         if (emitted.has(r.orderId)) continue;
         const children = byOrder[r.orderId].slice().sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime());
@@ -1014,6 +1076,41 @@ export default function TradesPage() {
           for (const c of children) out.push({ ...c, _isChild: true });
         }
         emitted.add(first.orderId!);
+      } 
+      // Agrupar por chave única (trades sem orderId mas duplicadas)
+      else if (!r.orderId) {
+        const timestamp = Math.floor(new Date(r.executedAt).getTime() / 1000);
+        const price = parseFloat(r.price || '0').toFixed(8);
+        const qty = parseFloat(r.qty || '0').toFixed(8);
+        const uniqueKey = `${timestamp}_${r.symbol}_${r.side}_${price}_${qty}`;
+        
+        if (byUniqueKey[uniqueKey] && byUniqueKey[uniqueKey].length > 1) {
+          if (emittedUniqueKeys.has(uniqueKey)) continue;
+          const children = byUniqueKey[uniqueKey].slice().sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime());
+          const totalQty = children.reduce((s, x) => s + Number(x.qty || 0), 0);
+          const totalVol = children.reduce((s, x) => s + Number(x.qty || 0) * Number(x.price || 0), 0);
+          const avgPrice = totalQty > 0 ? totalVol / totalQty : 0;
+          const totalFees = children.reduce((s, x) => s + Number(x.feeValue || 0), 0);
+          const totalPnl = children.reduce((s, x) => s + Number(x.realizedPnl || 0), 0);
+          const first = children[0];
+          const parent: DisplayRow = {
+            ...first,
+            qty: String(totalQty),
+            price: String(avgPrice),
+            feeValue: String(totalFees),
+            realizedPnl: String(totalPnl),
+            _isGroup: true,
+            _childrenCount: children.length,
+            orderId: `DUP_${uniqueKey.slice(0, 16)}`, // ID temporário para agrupamento
+          };
+          out.push(parent);
+          if (expandedOrders[parent.orderId!]) {
+            for (const c of children) out.push({ ...c, _isChild: true });
+          }
+          emittedUniqueKeys.add(uniqueKey);
+        } else {
+          out.push({ ...r });
+        }
       } else {
         out.push({ ...r });
       }
@@ -1205,29 +1302,72 @@ export default function TradesPage() {
           <h1 className="text-2xl sm:text-3xl text-white mb-1 sm:mb-2">Trades</h1>
           <p className="text-sm sm:text-base text-slate-400">Histórico detalhado de operações</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2">
+          <button 
+            onClick={async () => {
+              const user = auth.currentUser;
+              if (!user) return;
+              
+              const confirmDedup = confirm(
+                '⚠️ Remover trades duplicadas?\n\n' +
+                'Isso irá:\n' +
+                '1. Remover duplicatas por Order ID (manter a mais recente)\n' +
+                '2. Remover duplicatas por Trade ID (manter a mais recente)\n' +
+                '3. Remover duplicatas por características similares (timestamp+symbol+side+price+qty)\n\n' +
+                'Esta ação não pode ser desfeita!'
+              );
+              
+              if (!confirmDedup) return;
+              
+              try {
+                const token = await user.getIdToken();
+                const response = await fetch('/api/trades/deduplicate', {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                  alert(`✅ ${result.message}\n\nRemovidas ${result.deleted} trades duplicadas de ${result.duplicatesFound} encontradas.`);
+                  window.location.reload();
+                } else {
+                  alert(`Erro: ${result.error || result.message || 'Erro desconhecido'}`);
+                }
+              } catch (error) {
+                alert(`Erro ao remover duplicatas: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+              }
+            }}
+            className="bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded-lg transition-colors"
+            title="Remover trades duplicadas do banco de dados"
+          >
+            Remover Duplicatas
+          </button>
+          <button 
+            onClick={() => setShowDeleteModal(true)}
+            className="bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded-lg transition-colors"
+          >
+            Limpar Trades
+          </button>
           <button 
             onClick={() => setShowRecalcModal(true)}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
+            className="bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded-lg transition-colors"
           >
-            <span>💰</span>
-            <span className="hidden sm:inline">Recalcular PnL</span>
-            <span className="sm:hidden">Recalcular</span>
+            Recalcular PnL
           </button>
           <button 
             onClick={() => setShowSyncModal(true)}
-            className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
+            className="bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded-lg transition-colors"
           >
-            <span>🔄</span>
             Sincronizar
           </button>
           <button 
             onClick={() => setShowImportModal(true)}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
+            className="bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded-lg transition-colors"
           >
-            <span>📄</span>
-            <span className="hidden sm:inline">Importar CSV</span>
-            <span className="sm:hidden">Importar</span>
+            Importar CSV
           </button>
         </div>
       </div>
@@ -1811,33 +1951,305 @@ export default function TradesPage() {
                   </div>
                 )}
                 {importProgress.status === 'error' && (
-                  <div className="text-sm text-red-400">
-                    ✗ {importProgress.error || 'Erro desconhecido'}
+                  <div className="space-y-3">
+                    <div className="text-sm text-red-400">
+                      ✗ {importProgress.error || 'Erro desconhecido'}
+                    </div>
+                    {importProgress.jobId && (
+                      <button
+                        onClick={async () => {
+                          if (!importFile || !importAccountId) {
+                            alert('Por favor, selecione o mesmo arquivo CSV e conta para retomar a importação.');
+                            return;
+                          }
+                          
+                          const user = auth.currentUser;
+                          if (!user) return;
+                          
+                          const confirmResume = confirm(
+                            `⚠️ Retomar importação da linha ${importProgress.percent}%?\n\n` +
+                            `Isso continuará de onde parou sem perder os dados já importados.`
+                          );
+                          if (!confirmResume) return;
+                          
+                          try {
+                            const token = await user.getIdToken();
+                            const formData = new FormData();
+                            formData.append('file', importFile);
+                            formData.append('accountId', importAccountId);
+                            formData.append('jobId', importProgress.jobId);
+                            
+                            const response = await fetch('/api/trades/import-csv', {
+                              method: 'POST',
+                              headers: {
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: formData,
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (result.error) {
+                              alert(`Erro: ${result.error}`);
+                              return;
+                            }
+                            
+                            if (result.jobId) {
+                              setImportProgress({
+                                jobId: result.jobId,
+                                percent: importProgress.percent,
+                                message: 'Retomando importação...',
+                                status: 'running',
+                              });
+                              
+                              // Reiniciar polling
+                              const pollInterval = setInterval(async () => {
+                                try {
+                                  const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  });
+                                  const status = await statusResponse.json();
+                                  
+                                  if (status.error) {
+                                    clearInterval(pollInterval);
+                                    setImportProgress(null);
+                                    alert(`Erro: ${status.error}`);
+                                    return;
+                                  }
+                                  
+                                  setImportProgress({
+                                    jobId: status.jobId,
+                                    percent: status.percent || 0,
+                                    message: status.message || 'Processando...',
+                                    status: status.status,
+                                    result: status.result,
+                                    error: status.error,
+                                  });
+                                  
+                                  if (status.status === 'completed') {
+                                    clearInterval(pollInterval);
+                                    setTimeout(() => {
+                                      if (status.result) {
+                                        alert(`Importação concluída! ${status.result.inserted || 0} inseridos, ${status.result.updated || 0} atualizados.`);
+                                      }
+                                      setImportProgress(null);
+                                      setShowImportModal(false);
+                                      setImportFile(null);
+                                      window.location.reload();
+                                    }, 2000);
+                                  } else if (status.status === 'error') {
+                                    clearInterval(pollInterval);
+                                  }
+                                } catch (error) {
+                                  console.error('Error polling status:', error);
+                                  clearInterval(pollInterval);
+                                }
+                              }, 1000);
+                              
+                              window.__tradesImportPollInterval = pollInterval;
+                            }
+                          } catch (error) {
+                            alert(`Erro ao retomar importação: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+                          }
+                        }}
+                        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
+                      >
+                        🔄 Retomar Importação
+                      </button>
+                    )}
                   </div>
                 )}
                 {importProgress.status === 'running' && (
-                  <div className="flex items-center gap-2 text-slate-400 text-sm">
-                    <div className="animate-spin">⏳</div>
-                    <span>Processando...</span>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <div className="animate-spin">⏳</div>
+                      <span>Processando...</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (!importProgress.jobId) return;
+                        
+                        const user = auth.currentUser;
+                        if (!user) return;
+                        
+                        const confirmCancel = confirm('⚠️ Tem certeza que deseja cancelar esta importação? O progresso será perdido.');
+                        if (!confirmCancel) return;
+                        
+                        try {
+                          const token = await user.getIdToken();
+                          const response = await fetch('/api/jobs/stuck', {
+                            method: 'POST',
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                              'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ jobId: importProgress.jobId })
+                          });
+                          
+                          if (response.ok) {
+                            // Limpar intervalos
+                            if (window.__tradesImportPollInterval) {
+                              clearInterval(window.__tradesImportPollInterval);
+                              window.__tradesImportPollInterval = null;
+                            }
+                            
+                            setImportProgress(null);
+                            setShowImportModal(false);
+                            setImportFile(null);
+                            alert('✅ Importação cancelada com sucesso!');
+                          } else {
+                            alert('Erro ao cancelar importação');
+                          }
+                        } catch (error) {
+                          console.error('Error canceling import:', error);
+                          alert('Erro ao cancelar importação');
+                        }
+                      }}
+                      className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
+                    >
+                      ⛔ Cancelar Importação
+                    </button>
                   </div>
                 )}
               </div>
             ) : (
               <div className="space-y-4">
+                {incompleteJobs.length > 0 && (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                    <div className="text-sm text-yellow-400 font-semibold mb-2">
+                      ⚠️ Importações Incompletas Encontradas
+                    </div>
+                    <div className="space-y-2">
+                      {incompleteJobs.map((job) => (
+                        <div key={job.jobId} className="flex items-center justify-between text-xs text-yellow-300">
+                          <span>
+                            {Math.round((job.currentStep / job.totalSteps) * 100)}% completo
+                            ({job.currentStep}/{job.totalSteps} linhas)
+                          </span>
+                          <button
+                            onClick={async () => {
+                              if (!importFile || !importAccountId) {
+                                alert('Por favor, selecione o mesmo arquivo CSV e conta para retomar.');
+                                return;
+                              }
+                              
+                              const user = auth.currentUser;
+                              if (!user) return;
+                              
+                              const confirmResume = confirm(
+                                `Retomar importação da linha ${job.currentStep + 1}?`
+                              );
+                              if (!confirmResume) return;
+                              
+                              try {
+                                const token = await user.getIdToken();
+                                const formData = new FormData();
+                                formData.append('file', importFile);
+                                formData.append('accountId', importAccountId);
+                                formData.append('jobId', job.jobId);
+                                
+                                const response = await fetch('/api/trades/import-csv', {
+                                  method: 'POST',
+                                  headers: {
+                                    Authorization: `Bearer ${token}`,
+                                  },
+                                  body: formData,
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (result.error) {
+                                  alert(`Erro: ${result.error}`);
+                                  return;
+                                }
+                                
+                                if (result.jobId) {
+                                  setImportProgress({
+                                    jobId: result.jobId,
+                                    percent: Math.round((job.currentStep / job.totalSteps) * 100),
+                                    message: 'Retomando importação...',
+                                    status: 'running',
+                                  });
+                                  
+                                  // Reiniciar polling
+                                  const pollInterval = setInterval(async () => {
+                                    try {
+                                      const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+                                        headers: { Authorization: `Bearer ${token}` },
+                                      });
+                                      const status = await statusResponse.json();
+                                      
+                                      if (status.error) {
+                                        clearInterval(pollInterval);
+                                        setImportProgress(null);
+                                        alert(`Erro: ${status.error}`);
+                                        return;
+                                      }
+                                      
+                                      setImportProgress({
+                                        jobId: status.jobId,
+                                        percent: status.percent || 0,
+                                        message: status.message || 'Processando...',
+                                        status: status.status,
+                                        result: status.result,
+                                        error: status.error,
+                                      });
+                                      
+                                      if (status.status === 'completed') {
+                                        clearInterval(pollInterval);
+                                        setTimeout(() => {
+                                          if (status.result) {
+                                            alert(`Importação concluída! ${status.result.inserted || 0} inseridos, ${status.result.updated || 0} atualizados.`);
+                                          }
+                                          setImportProgress(null);
+                                          setShowImportModal(false);
+                                          setImportFile(null);
+                                          window.location.reload();
+                                        }, 2000);
+                                      } else if (status.status === 'error') {
+                                        clearInterval(pollInterval);
+                                      }
+                                    } catch (error) {
+                                      console.error('Error polling status:', error);
+                                      clearInterval(pollInterval);
+                                    }
+                                  }, 1000);
+                                  
+                                  window.__tradesImportPollInterval = pollInterval;
+                                }
+                              } catch (error) {
+                                alert(`Erro ao retomar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+                              }
+                            }}
+                            className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                          >
+                            Retomar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="block text-slate-300 text-sm mb-2">Conta Binance</label>
-                  <select
-                    value={importAccountId}
-                    onChange={(e) => setImportAccountId(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
-                  >
-                    <option value="" className="bg-slate-800 text-white">Selecione uma conta</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id} className="bg-slate-800 text-white">
-                        {acc.name}
-                      </option>
-                    ))}
-                  </select>
+                  {accounts.length === 0 ? (
+                    <div className="w-full px-3 py-2 bg-white/5 border border-yellow-500/50 rounded-lg text-yellow-400 text-sm">
+                      ⚠️ Nenhuma conta Binance encontrada. Por favor, adicione uma conta primeiro na página de Contas.
+                    </div>
+                  ) : (
+                    <select
+                      value={importAccountId}
+                      onChange={(e) => setImportAccountId(e.target.value)}
+                      className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
+                    >
+                      <option value="" className="bg-slate-800 text-white">Selecione uma conta</option>
+                      {accounts.map((acc) => (
+                        <option key={acc.id} value={acc.id} className="bg-slate-800 text-white">
+                          {acc.name} ({acc.market || 'SPOT'})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-slate-300 text-sm mb-2">Arquivo CSV</label>
@@ -1876,6 +2288,348 @@ export default function TradesPage() {
                       setImportFile(null);
                     }}
                     className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Limpar Trades */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+            <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
+              Limpar Trades
+            </h3>
+            
+            {isDeleting ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <div className="animate-spin">⏳</div>
+                  <span>Deletando trades...</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                  <div className="text-sm text-red-400 font-semibold mb-1">
+                    ⚠️ Atenção!
+                  </div>
+                  <div className="text-xs text-red-300">
+                    Esta ação é irreversível. Todos os trades que corresponderem aos filtros serão permanentemente deletados.
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">⏰ Período</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletePeriodDropdownOpen(!deletePeriodDropdownOpen);
+                        setDeleteMonthSelectOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-4 py-2.5 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <span className="truncate">
+                        {deletePeriod === 'custom' && deleteStartDate && deleteEndDate
+                          ? `${deleteStartDate} - ${deleteEndDate}`
+                          : deletePeriod === 'month-select' && deleteSelectedMonth
+                          ? `Mês: ${deleteSelectedMonth}`
+                          : deletePeriod === 'month'
+                          ? 'Este Mês'
+                          : deletePeriod === 'week'
+                          ? 'Esta Semana'
+                          : deletePeriod === 'year'
+                          ? 'Este Ano'
+                          : deletePeriod === 'all'
+                          ? '🌐 Todos'
+                          : 'Selecione um período'}
+                      </span>
+                      <span className={`transition-transform flex-shrink-0 ${deletePeriodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+                    </button>
+                    {deletePeriodDropdownOpen && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-10" 
+                          onClick={() => setDeletePeriodDropdownOpen(false)}
+                        />
+                        <div className="absolute z-20 mt-1 w-full bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeletePeriod('month');
+                              setDeleteSelectedMonth('');
+                              setDeleteStartDate('');
+                              setDeleteEndDate('');
+                              setDeletePeriodDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                              deletePeriod === 'month' ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                            }`}
+                          >
+                            📅 Este Mês
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeletePeriod('week');
+                              setDeleteSelectedMonth('');
+                              setDeleteStartDate('');
+                              setDeleteEndDate('');
+                              setDeletePeriodDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                              deletePeriod === 'week' ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                            }`}
+                          >
+                            📅 Esta Semana
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeletePeriod('year');
+                              setDeleteSelectedMonth('');
+                              setDeleteStartDate('');
+                              setDeleteEndDate('');
+                              setDeletePeriodDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                              deletePeriod === 'year' ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                            }`}
+                          >
+                            📅 Este Ano
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeletePeriod('month-select');
+                              setDeletePeriodDropdownOpen(false);
+                              setDeleteCustomDateOpen(false);
+                              setDeleteMonthSelectOpen(true);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                              deletePeriod === 'month-select' ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                            }`}
+                          >
+                            📅 Selecionar Mês
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeletePeriod('custom');
+                              setDeletePeriodDropdownOpen(false);
+                              setDeleteMonthSelectOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                              deletePeriod === 'custom' ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                            }`}
+                          >
+                            📅 Período Customizado
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeletePeriod('all');
+                              setDeleteSelectedMonth('');
+                              setDeleteStartDate('');
+                              setDeleteEndDate('');
+                              setDeletePeriodDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                              deletePeriod === 'all' ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                            }`}
+                          >
+                            🌐 Todos
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {deletePeriod === 'month-select' && deleteMonthSelectOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-25" 
+                        onClick={() => {
+                          setDeleteMonthSelectOpen(false);
+                          if (!deleteSelectedMonth) {
+                            setDeletePeriod('month');
+                          }
+                        }}
+                      />
+                      <div className="absolute top-full left-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 w-full min-w-[200px]">
+                        <div className="flex flex-col">
+                          <label className="text-sm font-medium text-slate-300 mb-2">📅 Selecionar Mês</label>
+                          <input 
+                            type="month" 
+                            value={deleteSelectedMonth} 
+                            onChange={(e) => {
+                              setDeleteSelectedMonth(e.target.value);
+                              setDeleteMonthSelectOpen(false);
+                            }}
+                            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                            required
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {deletePeriod === 'custom' && (
+                    <div className="mt-2 space-y-2">
+                      <input 
+                        type="date" 
+                        value={deleteStartDate} 
+                        onChange={(e) => setDeleteStartDate(e.target.value)} 
+                        className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        placeholder="Data inicial"
+                      />
+                      <input 
+                        type="date" 
+                        value={deleteEndDate} 
+                        onChange={(e) => setDeleteEndDate(e.target.value)}
+                        min={deleteStartDate}
+                        className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        placeholder="Data final"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">🏪 Market (opcional)</label>
+                  <input 
+                    value={deleteMarket} 
+                    onChange={(e) => setDeleteMarket(e.target.value)} 
+                    placeholder="SPOT/FUTURES" 
+                    className="w-full border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">💰 Symbol (opcional)</label>
+                  <input 
+                    value={deleteSymbol} 
+                    onChange={(e) => setDeleteSymbol(e.target.value)} 
+                    placeholder="e.g. BTCBRL" 
+                    className="w-full border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={async () => {
+                      const user = auth.currentUser;
+                      if (!user) return;
+
+                      // Construir filtros
+                      let monthFilter: string | undefined;
+                      let startDateFilter: string | undefined;
+                      let endDateFilter: string | undefined;
+
+                      if (deletePeriod === 'month-select' && deleteSelectedMonth) {
+                        monthFilter = deleteSelectedMonth;
+                      } else if (deletePeriod === 'custom' && deleteStartDate && deleteEndDate) {
+                        startDateFilter = deleteStartDate;
+                        endDateFilter = deleteEndDate;
+                      } else if (deletePeriod === 'month') {
+                        monthFilter = getMonth();
+                      } else if (deletePeriod === 'week') {
+                        const periodFilter = getPeriodFilter('week', earliestDate);
+                        if (periodFilter.startDate && periodFilter.endDate) {
+                          startDateFilter = periodFilter.startDate;
+                          endDateFilter = periodFilter.endDate;
+                        }
+                      } else if (deletePeriod === 'year') {
+                        const periodFilter = getPeriodFilter('year', earliestDate);
+                        if (periodFilter.startDate && periodFilter.endDate) {
+                          startDateFilter = periodFilter.startDate;
+                          endDateFilter = periodFilter.endDate;
+                        }
+                      } else if (deletePeriod === 'all' && earliestDate) {
+                        const periodFilter = getPeriodFilter('all', earliestDate);
+                        if (periodFilter.startDate && periodFilter.endDate) {
+                          startDateFilter = periodFilter.startDate;
+                          endDateFilter = periodFilter.endDate;
+                        }
+                      }
+
+                      const confirmDelete = confirm(
+                        `⚠️ Tem certeza que deseja deletar os trades?\n\n` +
+                        `Período: ${deletePeriod === 'month-select' && deleteSelectedMonth ? deleteSelectedMonth : deletePeriod === 'custom' && deleteStartDate && deleteEndDate ? `${deleteStartDate} - ${deleteEndDate}` : deletePeriod}\n` +
+                        `${deleteMarket ? `Market: ${deleteMarket}\n` : ''}` +
+                        `${deleteSymbol ? `Symbol: ${deleteSymbol}\n` : ''}\n` +
+                        `Esta ação é irreversível!`
+                      );
+
+                      if (!confirmDelete) return;
+
+                      setIsDeleting(true);
+
+                      try {
+                        const token = await user.getIdToken();
+                        const response = await fetch('/api/trades/delete', {
+                          method: 'POST',
+                          headers: {
+                            Authorization: `Bearer ${token}`,
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            month: monthFilter,
+                            startDate: startDateFilter,
+                            endDate: endDateFilter,
+                            market: deleteMarket || undefined,
+                            symbol: deleteSymbol || undefined,
+                          }),
+                        });
+
+                        const result = await response.json();
+
+                        if (response.ok) {
+                          alert(`✅ ${result.message}`);
+                          setIsDeleting(false);
+                          setShowDeleteModal(false);
+                          setDeletePeriod('month');
+                          setDeleteSelectedMonth('');
+                          setDeleteStartDate('');
+                          setDeleteEndDate('');
+                          setDeleteMarket('');
+                          setDeleteSymbol('');
+                          window.location.reload();
+                        } else {
+                          alert(`Erro: ${result.error || result.message || 'Erro desconhecido'}`);
+                          setIsDeleting(false);
+                        }
+                      } catch (error) {
+                        alert(`Erro ao deletar trades: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+                        setIsDeleting(false);
+                      }
+                    }}
+                    disabled={
+                      isDeleting || 
+                      (deletePeriod === 'month-select' && !deleteSelectedMonth) || 
+                      (deletePeriod === 'custom' && (!deleteStartDate || !deleteEndDate))
+                    }
+                    className="flex-1 bg-gradient-to-r from-red-500 to-orange-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Deletar
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setDeletePeriod('month');
+                      setDeleteSelectedMonth('');
+                      setDeleteStartDate('');
+                      setDeleteEndDate('');
+                      setDeleteMarket('');
+                      setDeleteSymbol('');
+                      setIsDeleting(false);
+                    }}
+                    disabled={isDeleting}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancelar
                   </button>
