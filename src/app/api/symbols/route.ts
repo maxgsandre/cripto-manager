@@ -51,7 +51,7 @@ async function fetchBinanceTradesForSymbolWindow(
       params.set('startTime', String(startTime));
       params.set('endTime', String(endTime));
       params.set('limit', '1'); // Apenas verificar se existe, não precisamos de todos
-      const res = await proxyGet<{ ok: boolean; data: any[] }>(`/trades?${params.toString()}`, authHeader);
+      const res = await proxyGet<{ ok: boolean; data: Array<{ id: string; symbol: string }> }>(`/trades?${params.toString()}`, authHeader);
       return { symbol, hasTrades: (res.data?.length || 0) > 0 };
     }
     
@@ -63,7 +63,7 @@ async function fetchBinanceTradesForSymbolWindow(
       ? '/fapi/v1/userTrades'
       : '/api/v3/myTrades';
 
-    const params: any = {
+    const params: Record<string, string | number> = {
       symbol,
       startTime,
       endTime,
@@ -72,7 +72,11 @@ async function fetchBinanceTradesForSymbolWindow(
       timestamp: Date.now()
     };
 
-    const queryString = new URLSearchParams(params).toString();
+    // Converter todos os valores para string para URLSearchParams
+    const paramsString: Record<string, string> = Object.fromEntries(
+      Object.entries(params).map(([key, value]) => [key, String(value)])
+    );
+    const queryString = new URLSearchParams(paramsString).toString();
     const signature = await createSignature(queryString, apiSecret);
     const fullUrl = `${baseUrl}${endpoint}?${queryString}&signature=${signature}`;
 
@@ -134,7 +138,7 @@ async function fetchBinanceTradesForSymbol(
       params.set('startTime', String(startTime));
       params.set('endTime', String(endTime));
       params.set('limit', '1'); // Apenas verificar se existe, não precisamos de todos
-      const res = await proxyGet<{ ok: boolean; data: any[] }>(`/trades?${params.toString()}`, authHeader);
+      const res = await proxyGet<{ ok: boolean; data: Array<{ id: string; symbol: string }> }>(`/trades?${params.toString()}`, authHeader);
       return { symbol, hasTrades: (res.data?.length || 0) > 0 };
     }
     
@@ -146,7 +150,7 @@ async function fetchBinanceTradesForSymbol(
       ? '/fapi/v1/userTrades'
       : '/api/v3/myTrades';
 
-    const params: any = {
+    const params: Record<string, string | number> = {
       symbol,
       startTime,
       endTime,
@@ -155,7 +159,11 @@ async function fetchBinanceTradesForSymbol(
       timestamp: Date.now()
     };
 
-    const queryString = new URLSearchParams(params).toString();
+    // Converter todos os valores para string para URLSearchParams
+    const paramsString: Record<string, string> = Object.fromEntries(
+      Object.entries(params).map(([key, value]) => [key, String(value)])
+    );
+    const queryString = new URLSearchParams(paramsString).toString();
     const signature = await createSignature(queryString, apiSecret);
     const fullUrl = `${baseUrl}${endpoint}?${queryString}&signature=${signature}`;
 
@@ -230,10 +238,16 @@ export async function GET(req: NextRequest) {
       ? Math.round((progress.currentStep / progress.totalSteps) * 100)
       : 0;
 
-    // Calcular tempo estimado
+    // Calcular tempo estimado - buscar createdAt diretamente do Prisma
     let estimatedTime = '';
     if (progress.status === 'running' && progress.currentStep > 0 && progress.totalSteps > 0) {
-      const elapsed = Date.now() - (progress as any).startTime || 0;
+      // Buscar o job do Prisma para ter acesso ao createdAt
+      const job = await prisma.syncJob.findUnique({
+        where: { jobId: queryJobId },
+        select: { createdAt: true }
+      });
+      const startTime = job?.createdAt ? new Date(job.createdAt).getTime() : Date.now();
+      const elapsed = Date.now() - startTime;
       const avgTimePerStep = elapsed / progress.currentStep;
       const remainingSteps = progress.totalSteps - progress.currentStep;
       const estimatedMs = avgTimePerStep * remainingSteps;
@@ -258,8 +272,8 @@ export async function GET(req: NextRequest) {
       estimatedTime,
       result: progress.result,
       error: progress.error,
-      symbols: progress.status === 'completed' ? (progress as any).symbols : undefined,
-      count: progress.status === 'completed' ? (progress as any).count : undefined
+      symbols: progress.status === 'completed' && progress.result ? (progress.result as { symbols?: string[] }).symbols : undefined,
+      count: progress.status === 'completed' && progress.result ? (progress.result as { count?: number }).count : undefined
     });
   }
 
@@ -288,7 +302,7 @@ export async function GET(req: NextRequest) {
 
   // Extrair símbolos únicos do banco
   const dbSymbols = Array.from(new Set(trades.map(t => t.symbol))).sort();
-  let allSymbols = [...dbSymbols];
+  const allSymbols = [...dbSymbols];
 
   // Se não for busca da API, retornar imediatamente
   if (!includeApi) {
@@ -308,6 +322,7 @@ export async function GET(req: NextRequest) {
   // Iniciar processamento assíncrono
   (async () => {
     let finalTotalSteps = 0;
+    const allSymbolsMutable = [...allSymbols]; // Cópia mutável para o processamento assíncrono
     try {
       await setProgress(jobId, {
         jobId,
@@ -479,8 +494,8 @@ export async function GET(req: NextRequest) {
 
           // Adicionar símbolos da API que não estão no banco
           for (const symbol of apiSymbols) {
-            if (!allSymbols.includes(symbol)) {
-              allSymbols.push(symbol);
+            if (!allSymbolsMutable.includes(symbol)) {
+              allSymbolsMutable.push(symbol);
             }
           }
         } catch (error) {
@@ -497,7 +512,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      allSymbols.sort();
+      allSymbolsMutable.sort();
 
       // Salvar resultado no progresso
       await setProgress(jobId, {
@@ -506,9 +521,9 @@ export async function GET(req: NextRequest) {
         totalSteps: finalTotalSteps || 1,
         currentStep: finalTotalSteps || 1,
         status: 'completed',
-        message: `Busca concluída! Encontrados ${allSymbols.length} pares negociados (${dbSymbols.length} do banco + ${allSymbols.length - dbSymbols.length} da API)`,
+        message: `Busca concluída! Encontrados ${allSymbolsMutable.length} pares negociados (${dbSymbols.length} do banco + ${allSymbolsMutable.length - dbSymbols.length} da API)`,
         result: {
-          inserted: allSymbols.length - dbSymbols.length,
+          inserted: allSymbolsMutable.length - dbSymbols.length,
           updated: 0
         }
       });

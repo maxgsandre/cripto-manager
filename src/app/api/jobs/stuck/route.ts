@@ -27,7 +27,11 @@ export async function GET(req: NextRequest) {
 
   try {
     // Buscar jobs em execução
-    const where: any = {
+    const where: {
+      userId: string;
+      status: 'running';
+      updatedAt?: { lt: Date };
+    } = {
       userId,
       status: 'running',
     };

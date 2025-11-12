@@ -39,7 +39,12 @@ export async function POST(req: NextRequest) {
     const accountIds = userAccounts.map(acc => acc.id);
 
     // Construir filtros de data
-    const where: any = {
+    const where: {
+      accountId: { in: string[] };
+      executedAt?: { gte: Date; lte: Date };
+      market?: string;
+      symbol?: string;
+    } = {
       accountId: { in: accountIds },
     };
 

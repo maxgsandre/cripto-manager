@@ -5,10 +5,11 @@ import InternalLayout from '@/components/InternalLayout';
 import { auth } from '@/lib/firebase/client';
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 
-// Estender Window para incluir __syncPollInterval
+// Estender Window para incluir __syncPollInterval e __tradesImportPollInterval
 declare global {
   interface Window {
     __syncPollInterval?: NodeJS.Timeout | null;
+    __tradesImportPollInterval?: NodeJS.Timeout | null;
   }
 }
 
@@ -200,7 +201,7 @@ export default function TradesPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importAccountId, setImportAccountId] = useState('');
-  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [accounts, setAccounts] = useState<{ id: string; name: string; market?: string }[]>([]);
   const [importProgress, setImportProgress] = useState<{
     jobId: string | null;
     percent: number;
@@ -287,11 +288,24 @@ export default function TradesPage() {
         if (jobsRes.ok) {
           const jobsData = await jobsRes.json();
           // Filtrar apenas jobs de importação CSV (pode identificar pela message)
-          const importJobs = (jobsData.jobs || []).filter((job: any) => 
+          type Job = {
+            jobId: string;
+            message?: string | null;
+            currentStep?: number;
+            totalSteps?: number;
+            updatedAt?: string;
+          };
+          const importJobs = ((jobsData.jobs || []) as Job[]).filter((job) => 
             job.message?.includes('Processando linha') || 
             job.message?.includes('Importação') ||
             job.message?.includes('CSV')
-          );
+          ).map((job) => ({
+            jobId: job.jobId,
+            currentStep: job.currentStep || 0,
+            totalSteps: job.totalSteps || 0,
+            message: job.message || null,
+            updatedAt: job.updatedAt ? (typeof job.updatedAt === 'string' ? job.updatedAt : new Date(job.updatedAt).toISOString()) : new Date().toISOString(),
+          }));
           setIncompleteJobs(importJobs);
         }
       } catch (error) {
@@ -1977,7 +1991,9 @@ export default function TradesPage() {
                             const formData = new FormData();
                             formData.append('file', importFile);
                             formData.append('accountId', importAccountId);
-                            formData.append('jobId', importProgress.jobId);
+                            if (importProgress.jobId) {
+                              formData.append('jobId', importProgress.jobId);
+                            }
                             
                             const response = await fetch('/api/trades/import-csv', {
                               method: 'POST',
@@ -2409,7 +2425,6 @@ export default function TradesPage() {
                             onClick={() => {
                               setDeletePeriod('month-select');
                               setDeletePeriodDropdownOpen(false);
-                              setDeleteCustomDateOpen(false);
                               setDeleteMonthSelectOpen(true);
                             }}
                             className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${

@@ -27,6 +27,7 @@ interface TradeCSVRow {
   'Side'?: string;
   'Order Price'?: string;
   'Price'?: string;
+  'Average Price'?: string;
   'Order Amount'?: string;
   'Quantity'?: string;
   'Executed'?: string;
@@ -40,6 +41,7 @@ interface TradeCSVRow {
   'Status'?: string;
   'Order ID'?: string;
   'OrderId'?: string;
+  'OrderNo'?: string;
   'Trade ID'?: string;
   'TradeId'?: string;
   'Market'?: string;
@@ -120,7 +122,7 @@ function parseDate(dateStr: string | undefined): Date | null {
   try {
     const date = new Date(dateStr);
     if (!isNaN(date.getTime())) return date;
-  } catch (e) {
+  } catch {
     // Ignorar
   }
   
@@ -137,7 +139,6 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const accountId = formData.get('accountId') as string;
-    const resumeFrom = formData.get('resumeFrom') as string; // Linha para retomar (opcional)
     const jobIdToResume = formData.get('jobId') as string; // JobId para retomar (opcional)
 
     if (!file && !jobIdToResume) {
@@ -159,7 +160,7 @@ export async function POST(request: Request) {
 
     // Verificar se é retomada de job anterior
     let startFrom = 0;
-    let jobId = jobIdToResume || createJobId(userId);
+    const jobId = jobIdToResume || createJobId(userId);
     let rows: TradeCSVRow[] = [];
     
     if (jobIdToResume) {
@@ -333,10 +334,27 @@ export async function POST(request: Request) {
       // Processar em batches
       for (let batchStart = startFrom; batchStart < rows.length; batchStart += BATCH_SIZE) {
         const batchEnd = Math.min(batchStart + BATCH_SIZE, rows.length);
-        const batch = rows.slice(batchStart, batchEnd);
         
-        const tradesToCreate: any[] = [];
-        const tradesToUpdate: Array<{ id: string; data: any }> = [];
+        type TradeData = {
+          accountId: string;
+          exchange: string;
+          market: string;
+          symbol: string;
+          side: string;
+          qty: string;
+          price: string;
+          feeValue: string;
+          feeAsset: string;
+          feePct: string;
+          realizedPnl: string;
+          orderId: string | null;
+          tradeId: string | null;
+          orderType: string | null;
+          executedAt: Date;
+        };
+        
+        const tradesToCreate: TradeData[] = [];
+        const tradesToUpdate: Array<{ id: string; data: TradeData }> = [];
         
         for (let i = batchStart; i < batchEnd; i++) {
           const row = rows[i];
@@ -522,7 +540,24 @@ export async function POST(request: Request) {
         if (tradesToCreate.length > 0) {
           try {
             // Verificar duplicatas uma última vez antes de inserir (buscar por orderId/tradeId se disponível)
-            const tradesToInsert: any[] = [];
+            type TradeData = {
+              accountId: string;
+              exchange: string;
+              market: string;
+              symbol: string;
+              side: string;
+              qty: string;
+              price: string;
+              feeValue: string;
+              feeAsset: string;
+              feePct: string;
+              realizedPnl: string;
+              orderId: string | null;
+              tradeId: string | null;
+              orderType: string | null;
+              executedAt: Date;
+            };
+            const tradesToInsert: TradeData[] = [];
             const orderIdsToCheck = tradesToCreate.filter(t => t.orderId).map(t => t.orderId!);
             const tradeIdsToCheck = tradesToCreate.filter(t => t.tradeId).map(t => t.tradeId!);
             
@@ -587,7 +622,7 @@ export async function POST(request: Request) {
                 } else {
                   skipped++;
                 }
-              } catch (e) {
+              } catch {
                 skipped++;
               }
             }
