@@ -249,7 +249,7 @@ export async function getTrades(
             previousMonthInitialBalance = previousMonthBalance.initialBalance;
           } else {
             // Se não há saldo salvo, calcular recursivamente (saldo final do mês anterior ao anterior)
-            // Para simplificar, vamos calcular baseado em todos os cashflows anteriores ao mês anterior
+            // Calcular baseado em todos os cashflows E PnL dos trades anteriores ao mês anterior
             const cashflowsBeforePreviousMonth = await prisma.cashflow.findMany({
               where: {
                 accountId: { in: query.accountIds },
@@ -262,7 +262,22 @@ export async function getTrades(
             for (const cf of cashflowsBeforePreviousMonth) {
               calc += Number(cf.amount); // amount já tem sinal: positivo para DEPOSIT, negativo para WITHDRAWAL
             }
-            previousMonthInitialBalance = calc.toString();
+            
+            // Buscar PnL dos trades anteriores ao mês anterior
+            const tradesBeforePreviousMonth = await prisma.trade.findMany({
+              where: {
+                accountId: { in: query.accountIds },
+                executedAt: { lt: previousMonthStart },
+              },
+            });
+            
+            let previousPnL = 0;
+            for (const t of tradesBeforePreviousMonth) {
+              previousPnL += toNumber(t.realizedPnl);
+            }
+            
+            // Saldo inicial do mês anterior = Cashflows anteriores + PnL dos trades anteriores
+            previousMonthInitialBalance = (calc + previousPnL).toString();
           }
           
           // 2. Buscar depósitos e saques do mês anterior (cashflows)
