@@ -180,6 +180,46 @@ export default function TradesPage() {
     result?: { inserted: number; updated: number };
     error?: string;
   } | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importAccountId, setImportAccountId] = useState('');
+  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [importProgress, setImportProgress] = useState<{
+    jobId: string | null;
+    percent: number;
+    message: string;
+    status: 'running' | 'completed' | 'error';
+    result?: { inserted: number; updated: number };
+    error?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const token = await user.getIdToken();
+      try {
+        const res = await fetch('/api/accounts', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setAccounts(data.results || []);
+          if (data.results && data.results.length > 0 && !importAccountId) {
+            setImportAccountId(data.results[0].id);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching accounts:', error);
+      }
+    };
+
+    fetchAccounts();
+  }, [importAccountId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -430,6 +470,101 @@ export default function TradesPage() {
     return option ? option.label : '📅 Este Mês';
   };
 
+  const importCSV = async () => {
+    if (!importFile || !importAccountId) {
+      alert('Selecione um arquivo CSV e uma conta');
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const token = await user.getIdToken();
+      const formData = new FormData();
+      formData.append('file', importFile);
+      formData.append('accountId', importAccountId);
+
+      const response = await fetch('/api/trades/import-csv', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.error) {
+        alert(`Erro: ${result.error}`);
+        return;
+      }
+
+      if (result.jobId) {
+        setImportProgress({
+          jobId: result.jobId,
+          percent: 0,
+          message: 'Iniciando importação...',
+          status: 'running',
+        });
+
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const status = await statusResponse.json();
+
+            if (status.error) {
+              if (pollInterval) clearInterval(pollInterval);
+              setImportProgress(null);
+              alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            setImportProgress({
+              jobId: status.jobId,
+              percent: status.percent || 0,
+              message: status.message || 'Processando...',
+              status: status.status,
+              result: status.result,
+              error: status.error,
+            });
+
+            if (status.status === 'completed') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                if (status.result) {
+                  alert(`Importação concluída! ${status.result.inserted || 0} inseridos, ${status.result.updated || 0} atualizados.`);
+                }
+                setImportProgress(null);
+                setShowImportModal(false);
+                setImportFile(null);
+                window.location.reload();
+              }, 2000);
+            } else if (status.status === 'error') {
+              if (pollInterval) clearInterval(pollInterval);
+              setTimeout(() => {
+                alert(`Erro na importação: ${status.error || 'Erro desconhecido'}`);
+                setImportProgress(null);
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Error polling status:', error);
+            if (pollInterval) clearInterval(pollInterval);
+          }
+        }, 1000);
+
+        window.__tradesImportPollInterval = pollInterval;
+      } else {
+        alert('Erro: jobId não retornado');
+      }
+    } catch (error) {
+      alert(`Erro ao importar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      setImportProgress(null);
+    }
+  };
+
   const recalculatePnL = async () => {
     try {
       const user = auth.currentUser;
@@ -555,6 +690,13 @@ export default function TradesPage() {
         params.set('includeApi', 'true');
         if (searchAll) {
           params.set('searchAll', 'true');
+        }
+        // Passar as datas do modal de sincronização
+        if (syncStartDate) {
+          params.set('startDate', syncStartDate);
+        }
+        if (syncEndDate) {
+          params.set('endDate', syncEndDate);
         }
       }
       const url = `/api/symbols?${params.toString()}`;
@@ -1043,6 +1185,14 @@ export default function TradesPage() {
           >
             <span>🔄</span>
             Sincronizar
+          </button>
+          <button 
+            onClick={() => setShowImportModal(true)}
+            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
+          >
+            <span>📄</span>
+            <span className="hidden sm:inline">Importar CSV</span>
+            <span className="sm:hidden">Importar</span>
           </button>
         </div>
       </div>
@@ -1579,6 +1729,118 @@ export default function TradesPage() {
                     }}
                     disabled={false}
                     className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Importação CSV */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+            <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
+              {importProgress !== null ? 'Importando CSV' : 'Importar CSV de Trades'}
+            </h3>
+            
+            {importProgress !== null ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-slate-300 text-sm">{importProgress.message}</span>
+                    <span className="text-slate-400 text-sm font-semibold">{importProgress.percent}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${
+                        importProgress.status === 'completed' 
+                          ? 'bg-green-500' 
+                          : importProgress.status === 'error'
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-purple-500 to-pink-500'
+                      }`}
+                      style={{ width: `${importProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
+                {importProgress.status === 'completed' && importProgress.result && (
+                  <div className="text-sm text-green-400">
+                    <div className="font-semibold mb-1">✓ Importação concluída!</div>
+                    <div>
+                      {importProgress.result.inserted || 0} inseridos, {importProgress.result.updated || 0} atualizados
+                    </div>
+                  </div>
+                )}
+                {importProgress.status === 'error' && (
+                  <div className="text-sm text-red-400">
+                    ✗ {importProgress.error || 'Erro desconhecido'}
+                  </div>
+                )}
+                {importProgress.status === 'running' && (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm">
+                    <div className="animate-spin">⏳</div>
+                    <span>Processando...</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">Conta Binance</label>
+                  <select
+                    value={importAccountId}
+                    onChange={(e) => setImportAccountId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
+                  >
+                    <option value="" className="bg-slate-800 text-white">Selecione uma conta</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id} className="bg-slate-800 text-white">
+                        {acc.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">Arquivo CSV</label>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setImportFile(file);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-500 file:text-white hover:file:bg-purple-600"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Selecione o arquivo CSV exportado da Binance com o histórico de trades
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={importCSV}
+                    disabled={!importFile || !importAccountId || !!importProgress}
+                    className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Importar
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (window.__tradesImportPollInterval) {
+                        clearInterval(window.__tradesImportPollInterval);
+                        window.__tradesImportPollInterval = null;
+                      }
+                      setShowImportModal(false);
+                      setImportProgress(null);
+                      setImportFile(null);
+                    }}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
                   >
                     Cancelar
                   </button>
