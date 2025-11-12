@@ -159,8 +159,8 @@ export default function AccountsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl text-white mb-2">Accounts</h1>
-          <p className="text-slate-400">Gerencie suas contas da Binance</p>
+          <h1 className="text-2xl sm:text-3xl text-white mb-1 sm:mb-2">Accounts</h1>
+          <p className="text-sm sm:text-base text-slate-400">Gerencie suas contas da Binance</p>
         </div>
       </div>
       {/* Adicionar Nova Conta */}
@@ -176,7 +176,7 @@ export default function AccountsPage() {
             </div>
           </div>
 
-          <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="flex items-center gap-2 text-slate-300 text-sm mb-2">
                 <span>👤</span>
@@ -231,9 +231,9 @@ export default function AccountsPage() {
                 required 
               />
             </div>
-            <div className="md:col-span-2 flex items-center gap-3 mt-4">
+            <div className="md:col-span-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4">
               <button 
-                className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-6 py-2 rounded-lg font-medium hover:from-blue-600 hover:to-cyan-600 transition-all duration-200 flex items-center gap-2" 
+                className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-4 sm:px-6 py-2 rounded-lg font-medium hover:from-blue-600 hover:to-cyan-600 transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base" 
                 disabled={loading} 
                 type="submit"
               >
@@ -241,16 +241,17 @@ export default function AccountsPage() {
                 Salvar
               </button>
               <button 
-                className={`${syncing ? 'bg-blue-500/20 border-blue-500/30' : 'bg-white/10 hover:bg-white/20'} text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${syncing ? 'cursor-wait' : 'cursor-pointer'}`}
+                className={`${syncing ? 'bg-blue-500/20 border-blue-500/30' : 'bg-white/10 hover:bg-white/20'} text-white px-4 sm:px-6 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base ${syncing ? 'cursor-wait' : 'cursor-pointer'}`}
                 disabled={loading || syncing} 
                 type="button" 
                 onClick={() => setShowSyncModal(true)}
               >
                 <span className={syncing ? 'animate-spin' : ''}>🔄</span>
-                {syncing ? 'Sincronizando...' : 'Sincronizar agora'}
+                <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sincronizar agora'}</span>
+                <span className="sm:hidden">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
               </button>
               {syncMessage && (
-                <div className={`mt-2 px-3 py-2 rounded ${syncMessage.includes('Erro') ? 'bg-red-500/20 text-red-400' : syncMessage.includes('Sucesso') ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                <div className={`px-3 py-2 rounded text-sm ${syncMessage.includes('Erro') ? 'bg-red-500/20 text-red-400' : syncMessage.includes('Sucesso') ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}>
                   {syncMessage}
                 </div>
               )}
@@ -272,29 +273,29 @@ export default function AccountsPage() {
             </div>
           </div>
 
-          <div className="overflow-auto">
+          <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
                 <tr className="bg-gradient-to-r from-white/10 to-white/5">
-                  <th className="text-left text-white border-b border-white/10 p-4 font-medium">
-                    <div className="flex items-center gap-2">
+                  <th className="text-left text-white border-b border-white/10 p-2 sm:p-4 font-medium text-xs sm:text-base">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       <span>👤</span>
-                      Nome
+                      <span className="hidden sm:inline">Nome</span>
                     </div>
                   </th>
-                  <th className="text-left text-white border-b border-white/10 p-4 font-medium">
-                    <div className="flex items-center gap-2">
+                  <th className="text-left text-white border-b border-white/10 p-2 sm:p-4 font-medium text-xs sm:text-base">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       <span>📊</span>
-                      Market
+                      <span className="hidden sm:inline">Market</span>
                     </div>
                   </th>
-                  <th className="text-left text-white border-b border-white/10 p-4 font-medium">
-                    <div className="flex items-center gap-2">
+                  <th className="text-left text-white border-b border-white/10 p-2 sm:p-4 font-medium text-xs sm:text-base hidden sm:table-cell">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       <span>📅</span>
                       Criado em
                     </div>
                   </th>
-                  <th className="text-left text-white border-b border-white/10 p-4 font-medium">
+                  <th className="text-left text-white border-b border-white/10 p-2 sm:p-4 font-medium text-xs sm:text-base">
                     Ações
                   </th>
                 </tr>
@@ -302,14 +303,14 @@ export default function AccountsPage() {
               <tbody className="divide-y divide-white/10">
                 {rows.map((r, index) => (
                   <tr key={r.id} className={`hover:bg-white/5 transition-colors ${index % 2 === 0 ? 'bg-white/5' : 'bg-white/10'}`}>
-                    <td className="p-4 text-white">
-                      <div className="flex items-center gap-2">
+                    <td className="p-2 sm:p-4 text-white text-xs sm:text-base">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <span>👤</span>
                         {r.name}
                       </div>
                     </td>
-                    <td className="p-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    <td className="p-2 sm:p-4">
+                      <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium ${
                         r.market === 'SPOT' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
                         r.market === 'FUTURES' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
                         'bg-blue-500/20 text-blue-400 border border-blue-500/30'
@@ -317,27 +318,27 @@ export default function AccountsPage() {
                         {r.market}
                       </span>
                     </td>
-                    <td className="p-4 text-white">
-                      <div className="flex items-center gap-2">
+                    <td className="p-2 sm:p-4 text-white text-xs sm:text-base hidden sm:table-cell">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <span>📅</span>
                         {new Date(r.createdAt).toLocaleString('pt-BR')}
                       </div>
                     </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
+                    <td className="p-2 sm:p-4">
+                      <div className="flex items-center gap-1 sm:gap-2">
                         <button 
-                          className="p-2 hover:bg-white/10 rounded-lg transition-colors" 
+                          className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition-colors" 
                           title="Sincronizar"
                           onClick={() => syncAccount(r.id)}
                         >
-                          <span className="text-slate-400 hover:text-white">🔄</span>
+                          <span className="text-slate-400 hover:text-white text-sm sm:text-base">🔄</span>
                         </button>
                         <button 
-                          className="p-2 hover:bg-red-500/20 rounded-lg transition-colors" 
+                          className="p-1.5 sm:p-2 hover:bg-red-500/20 rounded-lg transition-colors" 
                           title="Excluir"
                           onClick={() => deleteAccount(r.id)}
                         >
-                          <span className="text-slate-400 hover:text-red-400">🗑️</span>
+                          <span className="text-slate-400 hover:text-red-400 text-sm sm:text-base">🗑️</span>
                         </button>
                       </div>
                     </td>
@@ -351,9 +352,9 @@ export default function AccountsPage() {
 
       {/* Modal de Sincronização */}
       {showSyncModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
-            <h3 className="text-xl text-white font-semibold mb-4">Configurar sincronização</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+            <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">Configurar sincronização</h3>
             
             <div className="space-y-4">
               <div>
