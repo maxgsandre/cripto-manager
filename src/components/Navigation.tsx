@@ -25,6 +25,7 @@ export function Navigation({ user, onSignOut }: NavigationProps) {
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: '📊' },
     { href: '/trades', label: 'Trades', icon: '🔥' },
+    { href: '/cashflow', label: 'Depósitos/Saques', icon: '💸' },
     { href: '/accounts', label: 'Accounts', icon: '👤' },
   ];
 
