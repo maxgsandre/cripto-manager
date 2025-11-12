@@ -40,9 +40,15 @@ function getMonth() {
 }
 
 // Função para obter período baseado na seleção
-function getPeriodFilter(period: string): { month?: string; startDate?: string; endDate?: string } {
+function getPeriodFilter(period: string, earliestDate?: string | null): { month?: string; startDate?: string; endDate?: string } {
   const now = new Date();
   switch (period) {
+    case 'all': {
+      // Se temos data mais antiga, usar ela, senão usar 2020-01-01 como fallback
+      const start = earliestDate || '2020-01-01';
+      const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { startDate: start, endDate: end };
+    }
     case 'today': {
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       return { month: today };
@@ -89,8 +95,10 @@ export default function DashboardPage() {
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
   const [customDateOpen, setCustomDateOpen] = useState(false);
   const [monthSelectOpen, setMonthSelectOpen] = useState(false);
+  const [earliestDate, setEarliestDate] = useState<string | null>(null);
 
   const periodOptions = [
+    { value: 'all', label: '🌐 Todos' },
     { value: 'today', label: '📅 Hoje' },
     { value: 'week', label: '📆 Esta Semana' },
     { value: 'month', label: '📅 Este Mês' },
@@ -110,6 +118,33 @@ export default function DashboardPage() {
     const option = periodOptions.find(opt => opt.value === period);
     return option ? option.label : '📅 Este Mês';
   };
+
+  useEffect(() => {
+    const fetchEarliestDate = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/data-range', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.earliestDate) {
+            setEarliestDate(data.earliestDate);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching earliest date:', error);
+      }
+    };
+
+    fetchEarliestDate();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -136,8 +171,8 @@ export default function DashboardPage() {
         // Mês selecionado: usar o mês escolhido
         monthParam = selectedMonth;
       } else {
-        // Outros períodos: usar getPeriodFilter
-        const periodFilter = getPeriodFilter(period);
+        // Outros períodos: usar getPeriodFilter (passar earliestDate para 'all')
+        const periodFilter = getPeriodFilter(period, earliestDate);
         monthParam = periodFilter.month;
         startDateParam = periodFilter.startDate;
         endDateParam = periodFilter.endDate;
@@ -153,7 +188,7 @@ export default function DashboardPage() {
     });
 
     return () => unsubscribe();
-  }, [period, startDate, endDate, selectedMonth]);
+  }, [period, startDate, endDate, selectedMonth, earliestDate]);
 
   const fetchCurrentBalance = async () => {
     setLoadingBalance(true);
@@ -382,7 +417,7 @@ export default function DashboardPage() {
               ? startDate.substring(0, 7) // Extrai YYYY-MM da data inicial
               : period === 'year' 
                 ? getMonth() 
-                : (getPeriodFilter(period).month || getMonth())
+                : (getPeriodFilter(period, earliestDate).month || getMonth())
           }
         />
         <Kpi 

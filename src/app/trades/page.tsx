@@ -99,9 +99,15 @@ function getMonth() {
 }
 
 // Função para obter período baseado na seleção (igual ao dashboard)
-function getPeriodFilter(period: string): { month?: string; startDate?: string; endDate?: string } {
+function getPeriodFilter(period: string, earliestDate?: string | null): { month?: string; startDate?: string; endDate?: string } {
   const now = new Date();
   switch (period) {
+    case 'all': {
+      // Se temos data mais antiga, usar ela, senão usar 2020-01-01 como fallback
+      const start = earliestDate || '2020-01-01';
+      const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { startDate: start, endDate: end };
+    }
     case 'today': {
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       return { month: today };
@@ -164,6 +170,7 @@ export default function TradesPage() {
   const [customDateOpen, setCustomDateOpen] = useState(false);
   const [monthSelectOpen, setMonthSelectOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
+  const [earliestDate, setEarliestDate] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{
     jobId: string | null;
     percent: number;
@@ -192,6 +199,33 @@ export default function TradesPage() {
     result?: { inserted: number; updated: number };
     error?: string;
   } | null>(null);
+
+  useEffect(() => {
+    const fetchEarliestDate = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/data-range', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.earliestDate) {
+            setEarliestDate(data.earliestDate);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching earliest date:', error);
+      }
+    };
+
+    fetchEarliestDate();
+  }, []);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -235,8 +269,8 @@ export default function TradesPage() {
         // Mês selecionado: usar o mês escolhido
         currentMonth = selectedMonth;
       } else {
-        // Outros períodos: usar getPeriodFilter
-        const periodFilter = getPeriodFilter(period);
+        // Outros períodos: usar getPeriodFilter (passar earliestDate para 'all')
+        const periodFilter = getPeriodFilter(period, earliestDate);
         currentMonth = periodFilter.month || month;
         if (periodFilter.startDate && periodFilter.endDate) {
           useStartEnd = true;
@@ -286,7 +320,7 @@ export default function TradesPage() {
           params.set('startDate', startDate);
           params.set('endDate', endDate);
         } else {
-          const periodFilter = getPeriodFilter(period);
+          const periodFilter = getPeriodFilter(period, earliestDate);
           if (periodFilter.startDate && periodFilter.endDate) {
             params.set('startDate', periodFilter.startDate);
             params.set('endDate', periodFilter.endDate);
@@ -331,7 +365,7 @@ export default function TradesPage() {
     };
     
     fetchData();
-  }, [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize]);
+  }, [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize, earliestDate]);
 
   const handleExportCSV = async () => {
     const user = auth.currentUser;
@@ -347,7 +381,7 @@ export default function TradesPage() {
     } else if (period === 'month-select' && selectedMonth) {
       currentMonth = selectedMonth;
     } else {
-      const periodFilter = getPeriodFilter(period);
+      const periodFilter = getPeriodFilter(period, earliestDate);
       currentMonth = periodFilter.month || month;
       if (periodFilter.startDate && periodFilter.endDate) {
         useStartEnd = true;
@@ -405,7 +439,7 @@ export default function TradesPage() {
     } else if (period === 'month-select' && selectedMonth) {
       currentMonth = selectedMonth;
     } else {
-      const periodFilter = getPeriodFilter(period);
+      const periodFilter = getPeriodFilter(period, earliestDate);
       currentMonth = periodFilter.month || month;
       if (periodFilter.startDate && periodFilter.endDate) {
         useStartEnd = true;
@@ -450,6 +484,7 @@ export default function TradesPage() {
   };
 
   const periodOptions = [
+    { value: 'all', label: '🌐 Todos' },
     { value: 'today', label: '📅 Hoje' },
     { value: 'week', label: '📆 Esta Semana' },
     { value: 'month', label: '📅 Este Mês' },
