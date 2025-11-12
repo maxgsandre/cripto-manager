@@ -49,9 +49,15 @@ function getMonth() {
 }
 
 // Função para obter período baseado na seleção (igual ao dashboard)
-function getPeriodFilter(period: string): { month?: string; startDate?: string; endDate?: string } {
+function getPeriodFilter(period: string, earliestDate?: string | null): { month?: string; startDate?: string; endDate?: string } {
   const now = new Date();
   switch (period) {
+    case 'all': {
+      // Se temos data mais antiga, usar ela, senão usar 2020-01-01 como fallback
+      const start = earliestDate || '2020-01-01';
+      const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { startDate: start, endDate: end };
+    }
     case 'today': {
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       return { month: today };
@@ -95,8 +101,15 @@ export default function CashflowPage() {
   const [calculatedInitialBalance, setCalculatedInitialBalance] = useState('0');
   const [savedInitialBalance, setSavedInitialBalance] = useState('0');
   const [currentMonth, setCurrentMonth] = useState('');
+  const [summary, setSummary] = useState<{
+    totalDeposits: string;
+    totalWithdrawals: string;
+    netCashflow: string;
+  } | null>(null);
+  const [earliestDate, setEarliestDate] = useState<string | null>(null);
 
   const periodOptions = [
+    { value: 'all', label: '🌐 Todos' },
     { value: 'today', label: '📅 Hoje' },
     { value: 'week', label: '📆 Esta Semana' },
     { value: 'month', label: '📅 Este Mês' },
@@ -142,6 +155,33 @@ export default function CashflowPage() {
   } | null>(null);
 
   useEffect(() => {
+    const fetchEarliestDate = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/data-range', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.earliestDate) {
+            setEarliestDate(data.earliestDate);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching earliest date:', error);
+      }
+    };
+
+    fetchEarliestDate();
+  }, []);
+
+  useEffect(() => {
     const fetchData = async () => {
       const user = auth.currentUser;
       if (!user) return;
@@ -160,7 +200,7 @@ export default function CashflowPage() {
         params.set('startDate', monthStart);
         params.set('endDate', monthEnd);
       } else {
-        const periodFilter = getPeriodFilter(period);
+        const periodFilter = getPeriodFilter(period, earliestDate);
         if (periodFilter.startDate && periodFilter.endDate) {
           params.set('startDate', periodFilter.startDate);
           params.set('endDate', periodFilter.endDate);
@@ -198,13 +238,34 @@ export default function CashflowPage() {
         setCalculatedInitialBalance(data.calculatedInitialBalance || '0');
         setSavedInitialBalance(data.savedInitialBalance || '0');
         setCurrentMonth(data.month || '');
+        // Usar summary da API (valores de TODAS as transações filtradas)
+        if (data.summary) {
+          setSummary({
+            totalDeposits: data.summary.totalDeposits || '0',
+            totalWithdrawals: data.summary.totalWithdrawals || '0',
+            netCashflow: data.summary.netCashflow || '0',
+          });
+        } else {
+          // Fallback: calcular dos rows (compatibilidade)
+          const totalDeposits = (data.rows || [])
+            .filter((r: CashflowRow) => r.type === 'DEPOSIT' && !r.note?.includes('Expired'))
+            .reduce((sum: number, r: CashflowRow) => sum + Number(r.amount), 0);
+          const totalWithdrawals = (data.rows || [])
+            .filter((r: CashflowRow) => r.type === 'WITHDRAWAL' && !r.note?.includes('Expired'))
+            .reduce((sum: number, r: CashflowRow) => sum + Math.abs(Number(r.amount)), 0);
+          setSummary({
+            totalDeposits: totalDeposits.toString(),
+            totalWithdrawals: totalWithdrawals.toString(),
+            netCashflow: (totalDeposits - totalWithdrawals).toString(),
+          });
+        }
       } catch (error) {
         console.error('Error fetching cashflow:', error);
       }
     };
 
     fetchData();
-  }, [page, pageSize, period, startDate, endDate, selectedMonth, type, asset]);
+  }, [page, pageSize, period, startDate, endDate, selectedMonth, type, asset, earliestDate]);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -476,16 +537,10 @@ export default function CashflowPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  // Calcular totais (apenas transações concretizadas, ignorando expiradas)
-  const totalDeposits = rows
-    .filter(r => r.type === 'DEPOSIT' && !r.note?.includes('Expired'))
-    .reduce((sum, r) => sum + Number(r.amount), 0);
-  
-  const totalWithdrawals = rows
-    .filter(r => r.type === 'WITHDRAWAL' && !r.note?.includes('Expired'))
-    .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
-
-  const netCashflow = totalDeposits - totalWithdrawals;
+  // Usar valores do summary (calculados de TODAS as transações filtradas, não apenas da página atual)
+  const totalDeposits = summary ? Number(summary.totalDeposits) : 0;
+  const totalWithdrawals = summary ? Number(summary.totalWithdrawals) : 0;
+  const netCashflow = summary ? Number(summary.netCashflow) : 0;
 
   return (
     <InternalLayout>

@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     where.asset = asset;
   }
 
-  const [total, cashflows, tradesCount, calculatedInitialBalance] = await Promise.all([
+  const [total, cashflows, tradesCount, calculatedInitialBalance, summary] = await Promise.all([
     prisma.cashflow.count({ where }),
     prisma.cashflow.findMany({
       where,
@@ -140,6 +140,45 @@ export async function GET(req: NextRequest) {
         return '0';
       }
     })(),
+    // Calcular totais de TODAS as transações filtradas (não apenas paginadas)
+    (async () => {
+      try {
+        // Buscar TODAS as transações que correspondem ao filtro (sem paginação)
+        const allCashflows = await prisma.cashflow.findMany({
+          where,
+          select: {
+            type: true,
+            amount: true,
+          },
+        });
+
+        // Calcular totais (apenas transações concretizadas, ignorando expiradas)
+        let totalDeposits = 0;
+        let totalWithdrawals = 0;
+
+        for (const cf of allCashflows) {
+          const amount = Number(cf.amount);
+          if (cf.type === 'DEPOSIT') {
+            totalDeposits += amount;
+          } else if (cf.type === 'WITHDRAWAL') {
+            totalWithdrawals += Math.abs(amount);
+          }
+        }
+
+        return {
+          totalDeposits: totalDeposits.toString(),
+          totalWithdrawals: totalWithdrawals.toString(),
+          netCashflow: (totalDeposits - totalWithdrawals).toString(),
+        };
+      } catch (error) {
+        console.error('Error calculating summary:', error);
+        return {
+          totalDeposits: '0',
+          totalWithdrawals: '0',
+          netCashflow: '0',
+        };
+      }
+    })(),
   ]);
 
   const rows = cashflows.map((cf) => ({
@@ -182,6 +221,7 @@ export async function GET(req: NextRequest) {
     calculatedInitialBalance, // Saldo calculado baseado em depósitos/saques anteriores
     savedInitialBalance, // Saldo editável salvo pelo usuário
     month: monthToSearch, // Mês do período filtrado
+    summary, // Totais de depósitos, saques e fluxo líquido de TODAS as transações filtradas
   });
 }
 
