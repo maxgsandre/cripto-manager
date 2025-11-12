@@ -490,22 +490,24 @@ export default function CashflowPage() {
   return (
     <InternalLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-white">Depósitos e Saques</h1>
-          <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white">Depósitos e Saques</h1>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <button
               onClick={() => setShowSyncModal(true)}
-              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
+              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
             >
               <span>🔄</span>
-              Sincronizar via API
+              <span className="hidden sm:inline">Sincronizar via API</span>
+              <span className="sm:hidden">Sincronizar</span>
             </button>
             <button
               onClick={() => setShowImportModal(true)}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 flex items-center gap-2"
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 sm:px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
             >
               <span>📄</span>
-              Importar CSV
+              <span className="hidden sm:inline">Importar CSV</span>
+              <span className="sm:hidden">Importar</span>
             </button>
           </div>
         </div>
@@ -561,30 +563,30 @@ export default function CashflowPage() {
         />
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-4">
-            <div className="text-2xl font-bold text-green-400">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-3 sm:p-4">
+            <div className="text-xl sm:text-2xl font-bold text-green-400">
               {formatCurrency(totalDeposits)}
             </div>
-            <div className="text-sm text-slate-400">Total de Depósitos</div>
+            <div className="text-xs sm:text-sm text-slate-400">Total de Depósitos</div>
           </div>
-          <div className="bg-gradient-to-r from-red-500/10 to-pink-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-4">
-            <div className="text-2xl font-bold text-red-400">
+          <div className="bg-gradient-to-r from-red-500/10 to-pink-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-3 sm:p-4">
+            <div className="text-xl sm:text-2xl font-bold text-red-400">
               {formatCurrency(totalWithdrawals)}
             </div>
-            <div className="text-sm text-slate-400">Total de Saques</div>
+            <div className="text-xs sm:text-sm text-slate-400">Total de Saques</div>
           </div>
-          <div className="bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-4">
-            <div className="text-2xl font-bold text-blue-400">
+          <div className="bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-3 sm:p-4">
+            <div className="text-xl sm:text-2xl font-bold text-blue-400">
               {formatCurrency(netCashflow)}
             </div>
-            <div className="text-sm text-slate-400">Fluxo de Caixa Líquido</div>
+            <div className="text-xs sm:text-sm text-slate-400">Fluxo de Caixa Líquido</div>
           </div>
         </div>
 
         {/* Filtros */}
-        <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10 p-4 space-y-4 relative z-20">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10 p-3 sm:p-4 space-y-3 sm:space-y-4 relative z-20">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="relative z-30">
               <label className="block text-sm font-medium text-slate-300 mb-1">⏰ Período</label>
               <div className="relative">
@@ -731,7 +733,7 @@ export default function CashflowPage() {
           </div>
           {/* Informações de disponibilidade */}
           <div className="pt-2 border-t border-white/10">
-            <div className="flex flex-wrap gap-4 text-sm text-slate-400">
+            <div className="flex flex-wrap gap-3 sm:gap-4 text-xs sm:text-sm text-slate-400">
               <span>
                 <span className="text-slate-300 font-semibold">{total.toLocaleString('pt-BR')}</span> transações disponíveis
               </span>
@@ -787,25 +789,25 @@ export default function CashflowPage() {
 
           {/* Paginação */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-white/10">
-              <div className="text-sm text-slate-400">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 px-3 sm:px-4 py-3 border-t border-white/10">
+              <div className="text-xs sm:text-sm text-slate-400 text-center sm:text-left">
                 Mostrando {((page - 1) * pageSize) + 1} a {Math.min(page * pageSize, total)} de {total}
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-3 py-1 bg-white/5 border border-white/10 rounded text-sm text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
+                  className="px-3 py-1 bg-white/5 border border-white/10 rounded text-xs sm:text-sm text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
                 >
                   Anterior
                 </button>
-                <span className="px-3 py-1 text-sm text-slate-300">
+                <span className="px-3 py-1 text-xs sm:text-sm text-slate-300">
                   Página {page} de {totalPages}
                 </span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-3 py-1 bg-white/5 border border-white/10 rounded text-sm text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
+                  className="px-3 py-1 bg-white/5 border border-white/10 rounded text-xs sm:text-sm text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/10"
                 >
                   Próxima
                 </button>
@@ -816,9 +818,9 @@ export default function CashflowPage() {
 
         {/* Modal de Sincronização */}
         {showSyncModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
-              <h3 className="text-xl text-white font-semibold mb-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+              <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
                 {syncProgress !== null ? 'Sincronizando' : 'Sincronizar via API'}
               </h3>
               {syncProgress !== null ? (
@@ -900,9 +902,9 @@ export default function CashflowPage() {
 
         {/* Modal de Importação CSV */}
         {showImportModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-900 rounded-xl p-6 max-w-md w-full border border-white/10">
-              <h3 className="text-xl text-white font-semibold mb-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+              <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
                 {importProgress !== null ? 'Importando CSV' : 'Importar CSV'}
               </h3>
               {importProgress !== null ? (
