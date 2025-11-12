@@ -50,13 +50,41 @@ function EditableBalanceKpi({ label, value, icon = '💳', color = 'purple', mon
 
       if (response.ok) {
         const data = await response.json();
-        setDisplayValue(data.balance || '0');
-        setEditValue(data.balance || '0');
+        const savedBalance = data.balance || '0';
+        // Se há saldo salvo e não é calculado, usar o salvo
+        // Caso contrário, manter o value que vem do summary (calculado)
+        if (savedBalance !== '0' && !data.calculated) {
+          setDisplayValue(savedBalance);
+          setEditValue(savedBalance);
+        } else if (value && value !== '0') {
+          // Usar o value calculado do summary
+          setDisplayValue(value);
+          setEditValue(value);
+        }
+      } else {
+        // Se a API falhar, manter o value que vem do summary
+        if (value && value !== '0') {
+          setDisplayValue(value);
+          setEditValue(value);
+        }
       }
     } catch (error) {
       console.error('[EditableBalanceKpi] Error fetching initial balance:', error);
+      // Em caso de erro, manter o value que vem do summary
+      if (value && value !== '0') {
+        setDisplayValue(value);
+        setEditValue(value);
+      }
     }
   };
+
+  useEffect(() => {
+    // Sempre atualizar quando o value mudar (vem do summary calculado)
+    if (value !== undefined) {
+      setDisplayValue(value);
+      setEditValue(value);
+    }
+  }, [value]);
 
   useEffect(() => {
     // Wait for auth state to be ready before fetching balance
