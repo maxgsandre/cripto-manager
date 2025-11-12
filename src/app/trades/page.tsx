@@ -172,11 +172,24 @@ export default function TradesPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const currentMonth = period === 'custom' && startDate && endDate 
-        ? `${startDate}_${endDate}` 
-        : period === 'custom' 
-          ? month 
-          : getPeriodFilter(period);
+      // Para período "year", usar startDate e endDate em vez de month
+      let currentMonth: string;
+      let useStartEnd = false;
+      
+      if (period === 'year') {
+        const now = new Date();
+        const yearStart = `${now.getFullYear()}-01-01`;
+        const yearEnd = `${now.getFullYear()}-12-31`;
+        currentMonth = `${yearStart}_${yearEnd}`;
+        useStartEnd = true;
+      } else if (period === 'custom' && startDate && endDate) {
+        currentMonth = `${startDate}_${endDate}`;
+        useStartEnd = true;
+      } else if (period === 'custom') {
+        currentMonth = month;
+      } else {
+        currentMonth = getPeriodFilter(period);
+      }
       
       type ApiTrade = {
         executedAt: string | Date;
@@ -216,9 +229,15 @@ export default function TradesPage() {
       const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
       if (market) params.set('market', market);
       if (symbol) params.set('symbol', symbol);
-      if (period === 'custom' && startDate && endDate) {
-        params.set('startDate', startDate);
-        params.set('endDate', endDate);
+      if (useStartEnd) {
+        if (period === 'year') {
+          const now = new Date();
+          params.set('startDate', `${now.getFullYear()}-01-01`);
+          params.set('endDate', `${now.getFullYear()}-12-31`);
+        } else if (period === 'custom' && startDate && endDate) {
+          params.set('startDate', startDate);
+          params.set('endDate', endDate);
+        }
       }
       
       // Adicionar token de autenticação
@@ -265,17 +284,36 @@ export default function TradesPage() {
     if (!user) return;
     
     const token = await user.getIdToken();
-    const currentMonth = period === 'custom' && startDate && endDate 
-      ? `${startDate}_${endDate}` 
-      : period === 'custom' 
-        ? month 
-        : getPeriodFilter(period);
+    let currentMonth: string;
+    let useStartEnd = false;
+    
+    if (period === 'year') {
+      const now = new Date();
+      const yearStart = `${now.getFullYear()}-01-01`;
+      const yearEnd = `${now.getFullYear()}-12-31`;
+      currentMonth = `${yearStart}_${yearEnd}`;
+      useStartEnd = true;
+    } else if (period === 'custom' && startDate && endDate) {
+      currentMonth = `${startDate}_${endDate}`;
+      useStartEnd = true;
+    } else if (period === 'custom') {
+      currentMonth = month;
+    } else {
+      currentMonth = getPeriodFilter(period);
+    }
+    
     const params = new URLSearchParams({ month: currentMonth });
     if (market) params.set('market', market);
     if (symbol) params.set('symbol', symbol);
-    if (period === 'custom' && startDate && endDate) {
-      params.set('startDate', startDate);
-      params.set('endDate', endDate);
+    if (useStartEnd) {
+      if (period === 'year') {
+        const now = new Date();
+        params.set('startDate', `${now.getFullYear()}-01-01`);
+        params.set('endDate', `${now.getFullYear()}-12-31`);
+      } else if (period === 'custom' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      }
     }
     
     try {
@@ -304,17 +342,36 @@ export default function TradesPage() {
     if (!user) return;
     
     const token = await user.getIdToken();
-    const currentMonth = period === 'custom' && startDate && endDate 
-      ? `${startDate}_${endDate}` 
-      : period === 'custom' 
-        ? month 
-        : getPeriodFilter(period);
+    let currentMonth: string;
+    let useStartEnd = false;
+    
+    if (period === 'year') {
+      const now = new Date();
+      const yearStart = `${now.getFullYear()}-01-01`;
+      const yearEnd = `${now.getFullYear()}-12-31`;
+      currentMonth = `${yearStart}_${yearEnd}`;
+      useStartEnd = true;
+    } else if (period === 'custom' && startDate && endDate) {
+      currentMonth = `${startDate}_${endDate}`;
+      useStartEnd = true;
+    } else if (period === 'custom') {
+      currentMonth = month;
+    } else {
+      currentMonth = getPeriodFilter(period);
+    }
+    
     const params = new URLSearchParams({ month: currentMonth });
     if (market) params.set('market', market);
     if (symbol) params.set('symbol', symbol);
-    if (period === 'custom' && startDate && endDate) {
-      params.set('startDate', startDate);
-      params.set('endDate', endDate);
+    if (useStartEnd) {
+      if (period === 'year') {
+        const now = new Date();
+        params.set('startDate', `${now.getFullYear()}-01-01`);
+        params.set('endDate', `${now.getFullYear()}-12-31`);
+      } else if (period === 'custom' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      }
     }
     
     try {
@@ -891,6 +948,20 @@ export default function TradesPage() {
         </div>
       </Toolbar>
 
+      {/* Informações de disponibilidade */}
+      <div className="mb-4 p-3 bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10">
+        <div className="flex flex-wrap gap-4 text-sm text-slate-400">
+          <span>
+            <span className="text-slate-300 font-semibold">{total.toLocaleString('pt-BR')}</span> trades disponíveis
+          </span>
+          {total > 0 && (
+            <span>
+              <span className="text-slate-300 font-semibold">{Math.ceil(total / pageSize)}</span> página{Math.ceil(total / pageSize) !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Métricas extras */}
       {summary && (
         <div className="space-y-4">
@@ -1293,10 +1364,9 @@ export default function TradesPage() {
                       setRecalcStartDate('');
                       setRecalcEndDate('');
                     }}
-                    disabled={recalcProgress?.status === 'running'}
-                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
                   >
-                    {recalcProgress?.status === 'running' ? 'Aguarde...' : 'Cancelar'}
+                    Cancelar
                   </button>
                 </div>
               </div>
