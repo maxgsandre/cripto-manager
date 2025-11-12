@@ -33,6 +33,89 @@ function getCommonSymbols(): string[] {
   ];
 }
 
+async function fetchBinanceTradesForSymbolWindow(
+  apiKey: string,
+  apiSecret: string,
+  market: string,
+  symbol: string,
+  startTime: number,
+  endTime: number,
+  authHeader?: string
+): Promise<{ symbol: string; hasTrades: boolean }> {
+  try {
+    const proxyBase = getProxyUrl();
+    if (proxyBase && authHeader) {
+      const params = new URLSearchParams();
+      params.set('market', market);
+      params.set('symbol', symbol);
+      params.set('startTime', String(startTime));
+      params.set('endTime', String(endTime));
+      params.set('limit', '1'); // Apenas verificar se existe, não precisamos de todos
+      const res = await proxyGet<{ ok: boolean; data: any[] }>(`/trades?${params.toString()}`, authHeader);
+      return { symbol, hasTrades: (res.data?.length || 0) > 0 };
+    }
+    
+    const baseUrl = market === 'FUTURES' 
+      ? 'https://fapi.binance.com' 
+      : 'https://api.binance.com';
+    
+    const endpoint = market === 'FUTURES'
+      ? '/fapi/v1/userTrades'
+      : '/api/v3/myTrades';
+
+    const params: any = {
+      symbol,
+      startTime,
+      endTime,
+      limit: 1, // Apenas verificar se existe, não precisamos de todos
+      recvWindow: 5000,
+      timestamp: Date.now()
+    };
+
+    const queryString = new URLSearchParams(params).toString();
+    const signature = await createSignature(queryString, apiSecret);
+    const fullUrl = `${baseUrl}${endpoint}?${queryString}&signature=${signature}`;
+
+    const response = await fetch(fullUrl, {
+      headers: {
+        'X-MBX-APIKEY': apiKey,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // Se for erro 400 com "Invalid symbol", o símbolo não existe ou não está disponível
+      if (response.status === 400 && errorText.includes('Invalid symbol')) {
+        return { symbol, hasTrades: false };
+      }
+      // Se for erro relacionado a período muito grande ou outros erros, logar detalhadamente
+      if (response.status === 400) {
+        console.log(`[${symbol}] ⚠️ Erro 400: ${errorText.substring(0, 200)}`);
+      } else {
+        console.log(`[${symbol}] ⚠️ Erro ${response.status}: ${errorText.substring(0, 200)}`);
+      }
+      return { symbol, hasTrades: false };
+    }
+
+    const data = await response.json();
+    
+    // Verificar se é um array válido
+    if (!Array.isArray(data)) {
+      console.log(`[${symbol}] ⚠️ Resposta não é array:`, typeof data, JSON.stringify(data).substring(0, 100));
+      return { symbol, hasTrades: false };
+    }
+    
+    const hasTrades = data.length > 0;
+    if (hasTrades) {
+      console.log(`[${symbol}] ✅ Encontrado ${data.length} trade(s) no período ${new Date(startTime).toISOString().split('T')[0]} até ${new Date(endTime).toISOString().split('T')[0]}`);
+    }
+    return { symbol, hasTrades };
+  } catch (error) {
+    console.error(`[${symbol}] Erro ao verificar:`, error instanceof Error ? error.message : error);
+    return { symbol, hasTrades: false };
+  }
+}
+
 async function fetchBinanceTradesForSymbol(
   apiKey: string,
   apiSecret: string,
@@ -83,13 +166,35 @@ async function fetchBinanceTradesForSymbol(
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      // Se for erro 400 com "Invalid symbol", o símbolo não existe ou não está disponível
+      if (response.status === 400 && errorText.includes('Invalid symbol')) {
+        return { symbol, hasTrades: false };
+      }
+      // Se for erro relacionado a período muito grande ou outros erros, logar detalhadamente
+      if (response.status === 400) {
+        console.log(`[${symbol}] ⚠️ Erro 400: ${errorText.substring(0, 200)}`);
+      } else {
+        console.log(`[${symbol}] ⚠️ Erro ${response.status}: ${errorText.substring(0, 200)}`);
+      }
       return { symbol, hasTrades: false };
     }
 
     const data = await response.json();
-    return { symbol, hasTrades: Array.isArray(data) && data.length > 0 };
+    
+    // Verificar se é um array válido
+    if (!Array.isArray(data)) {
+      console.log(`[${symbol}] ⚠️ Resposta não é array:`, typeof data, JSON.stringify(data).substring(0, 100));
+      return { symbol, hasTrades: false };
+    }
+    
+    const hasTrades = data.length > 0;
+    if (hasTrades) {
+      console.log(`[${symbol}] ✅ Encontrado ${data.length} trade(s) no período ${new Date(startTime).toISOString().split('T')[0]} até ${new Date(endTime).toISOString().split('T')[0]}`);
+    }
+    return { symbol, hasTrades };
   } catch (error) {
-    console.error(`Erro ao verificar ${symbol}:`, error);
+    console.error(`[${symbol}] Erro ao verificar:`, error instanceof Error ? error.message : error);
     return { symbol, hasTrades: false };
   }
 }
@@ -104,12 +209,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const includeApi = searchParams.get('includeApi') === 'true';
   const searchAll = searchParams.get('searchAll') === 'true';
-  const jobId = searchParams.get('jobId'); // Se fornecido, retornar progresso
+  const queryJobId = searchParams.get('jobId'); // Se fornecido, retornar progresso
+  const startDateParam = searchParams.get('startDate'); // Data inicial do modal
+  const endDateParam = searchParams.get('endDate'); // Data final do modal
 
   // Se jobId fornecido, retornar progresso
-  if (jobId) {
+  if (queryJobId) {
     const { getProgress } = await import('@/lib/sync/progress');
-    const progress = await getProgress(jobId);
+    const progress = await getProgress(queryJobId);
     
     if (!progress) {
       return Response.json({ error: 'Job not found' }, { status: 404 });
@@ -223,9 +330,25 @@ export async function GET(req: NextRequest) {
           const apiKey = await decrypt(acc.apiKeyEnc);
           const apiSecret = await decrypt(acc.apiSecretEnc);
 
-          // Buscar últimos 90 dias (limite da API)
-          const endTime = Date.now();
-          const startTime = endTime - (90 * 24 * 60 * 60 * 1000);
+          // Usar as datas do modal ou padrão (últimos 90 dias)
+          let endTime: number;
+          let startTime: number;
+          
+          if (startDateParam && endDateParam) {
+            // Usar as datas fornecidas pelo modal
+            const startDate = new Date(startDateParam + 'T00:00:00.000Z');
+            const endDate = new Date(endDateParam + 'T23:59:59.999Z');
+            startTime = startDate.getTime();
+            endTime = endDate.getTime();
+            const daysDiff = Math.ceil((endTime - startTime) / (24 * 60 * 60 * 1000));
+            console.log(`🔍 Buscando símbolos no período: ${startDateParam} até ${endDateParam} (${daysDiff} dias)`);
+            console.log(`   Timestamps: ${startTime} até ${endTime}`);
+          } else {
+            // Padrão: últimos 90 dias
+            endTime = Date.now();
+            startTime = endTime - (90 * 24 * 60 * 60 * 1000);
+            console.log(`🔍 Buscando símbolos nos últimos 90 dias (padrão)`);
+          }
 
           let symbolsToTest: string[] = [];
 
@@ -331,13 +454,20 @@ export async function GET(req: NextRequest) {
               )
             );
 
+            // Separar símbolos com trades e sem trades para log detalhado
             const batchSymbols = symbolChecks
               .filter(check => check.hasTrades)
+              .map(check => check.symbol);
+            
+            const batchNoTrades = symbolChecks
+              .filter(check => !check.hasTrades)
               .map(check => check.symbol);
 
             apiSymbols.push(...batchSymbols);
             
-            console.log(`Lote ${currentBatch}/${totalBatches} concluído. Encontrados ${batchSymbols.length} pares com trades neste lote.`);
+            console.log(`📦 Lote ${currentBatch}/${totalBatches} concluído:`);
+            console.log(`   ✅ Com trades (${batchSymbols.length}): ${batchSymbols.join(', ') || 'nenhum'}`);
+            console.log(`   ❌ Sem trades (${batchNoTrades.length}): ${batchNoTrades.slice(0, 5).join(', ')}${batchNoTrades.length > 5 ? '...' : ''}`);
 
             // Delay entre lotes para respeitar rate limits
             if (i + batchSize < symbolsToTest.length) {
