@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import InternalLayout from '@/components/InternalLayout';
 import { auth } from '@/lib/firebase/client';
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import { EditableCashflowBalance } from '@/components/EditableCashflowBalance';
 
 declare global {
   interface Window {
@@ -42,18 +43,79 @@ function formatDateTime(dateStr: string): string {
   }).format(date);
 }
 
+function getMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Função para obter período baseado na seleção (igual ao dashboard)
+function getPeriodFilter(period: string): { month?: string; startDate?: string; endDate?: string } {
+  const now = new Date();
+  switch (period) {
+    case 'today': {
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { month: today };
+    }
+    case 'week': {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      const weekEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { startDate: weekStartStr, endDate: weekEndStr };
+    }
+    case 'month':
+      return { month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}` };
+    case 'year': {
+      const yearStart = `${now.getFullYear()}-01-01`;
+      const yearEnd = `${now.getFullYear()}-12-31`;
+      return { startDate: yearStart, endDate: yearEnd };
+    }
+    default:
+      return { month: getMonth() };
+  }
+}
+
 export default function CashflowPage() {
   const [rows, setRows] = useState<CashflowRow[]>([]);
   const [total, setTotal] = useState(0);
   const [tradesCount, setTradesCount] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [period, setPeriod] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState('');
+  const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
+  const [customDateOpen, setCustomDateOpen] = useState(false);
+  const [monthSelectOpen, setMonthSelectOpen] = useState(false);
   const [type, setType] = useState<string>('');
   const [asset, setAsset] = useState<string>('');
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [calculatedInitialBalance, setCalculatedInitialBalance] = useState('0');
+  const [savedInitialBalance, setSavedInitialBalance] = useState('0');
+  const [currentMonth, setCurrentMonth] = useState('');
+
+  const periodOptions = [
+    { value: 'today', label: '📅 Hoje' },
+    { value: 'week', label: '📆 Esta Semana' },
+    { value: 'month', label: '📅 Este Mês' },
+    { value: 'month-select', label: '📆 Selecionar Mês' },
+    { value: 'year', label: '📅 Este Ano' },
+    { value: 'custom', label: '🔧 Personalizado' },
+  ];
+
+  const getPeriodLabel = () => {
+    if (period === 'month-select' && selectedMonth) {
+      const date = new Date(selectedMonth + '-01');
+      return `📅 ${date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+    }
+    if (period === 'custom' && startDate && endDate) {
+      return `🔧 ${new Date(startDate).toLocaleDateString('pt-BR')} - ${new Date(endDate).toLocaleDateString('pt-BR')}`;
+    }
+    const option = periodOptions.find(opt => opt.value === period);
+    return option ? option.label : '📅 Este Mês';
+  };
   
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncStartDate, setSyncStartDate] = useState('');
@@ -87,8 +149,30 @@ export default function CashflowPage() {
       const token = await user.getIdToken();
       const params = new URLSearchParams();
       
-      if (startDate) params.set('startDate', startDate);
-      if (endDate) params.set('endDate', endDate);
+      // Aplicar lógica de período igual ao dashboard
+      if (period === 'custom' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      } else if (period === 'month-select' && selectedMonth) {
+        const [year, monthNum] = selectedMonth.split('-').map(Number);
+        const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+        const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+        params.set('startDate', monthStart);
+        params.set('endDate', monthEnd);
+      } else {
+        const periodFilter = getPeriodFilter(period);
+        if (periodFilter.startDate && periodFilter.endDate) {
+          params.set('startDate', periodFilter.startDate);
+          params.set('endDate', periodFilter.endDate);
+        } else if (periodFilter.month) {
+          const [year, monthNum] = periodFilter.month.split('-').map(Number);
+          const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+          const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+          params.set('startDate', monthStart);
+          params.set('endDate', monthEnd);
+        }
+      }
+      
       if (type) params.set('type', type);
       if (asset) params.set('asset', asset);
       params.set('page', page.toString());
@@ -111,13 +195,16 @@ export default function CashflowPage() {
         setTotal(data.total);
         setRows(data.rows || []);
         setTradesCount(data.tradesCount || 0);
+        setCalculatedInitialBalance(data.calculatedInitialBalance || '0');
+        setSavedInitialBalance(data.savedInitialBalance || '0');
+        setCurrentMonth(data.month || '');
       } catch (error) {
         console.error('Error fetching cashflow:', error);
       }
     };
 
     fetchData();
-  }, [page, pageSize, startDate, endDate, type, asset]);
+  }, [page, pageSize, period, startDate, endDate, selectedMonth, type, asset]);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -423,6 +510,56 @@ export default function CashflowPage() {
           </div>
         </div>
 
+        {/* Saldo Inicial Editável */}
+        <EditableCashflowBalance
+          calculatedBalance={calculatedInitialBalance}
+          savedBalance={savedInitialBalance}
+          month={currentMonth || (() => {
+            // Se não há currentMonth, usar mês do startDate ou mês atual
+            if (startDate) {
+              return startDate.substring(0, 7);
+            }
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          })()}
+          onUpdate={() => {
+            // Recarregar dados após atualização
+            const fetchData = async () => {
+              const user = auth.currentUser;
+              if (!user) return;
+
+              const token = await user.getIdToken();
+              const params = new URLSearchParams();
+              
+              if (startDate) params.set('startDate', startDate);
+              if (endDate) params.set('endDate', endDate);
+              if (type) params.set('type', type);
+              if (asset) params.set('asset', asset);
+              params.set('page', page.toString());
+              params.set('pageSize', pageSize.toString());
+
+              try {
+                const res = await fetch(`/api/cashflow?${params.toString()}`, {
+                  cache: 'no-store',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                });
+
+                if (res.ok) {
+                  const data = await res.json();
+                  setSavedInitialBalance(data.savedInitialBalance || '0');
+                  setCalculatedInitialBalance(data.calculatedInitialBalance || '0');
+                  setCurrentMonth(data.month || '');
+                }
+              } catch (error) {
+                console.error('Error fetching cashflow:', error);
+              }
+            };
+            fetchData();
+          }}
+        />
+
         {/* KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/5 backdrop-blur-sm rounded-lg border border-white/10 p-4">
@@ -446,37 +583,139 @@ export default function CashflowPage() {
         </div>
 
         {/* Filtros */}
-        <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10 p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm text-slate-300 mb-2">Data Inicial</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-300 mb-2">Data Final</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
-              />
+        <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10 p-4 space-y-4 relative z-20">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="relative z-30">
+              <label className="block text-sm font-medium text-slate-300 mb-1">⏰ Período</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setPeriodDropdownOpen(!periodDropdownOpen)}
+                  className="w-full flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-4 py-2.5 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <span>{getPeriodLabel()}</span>
+                  <span className={`transition-transform ${periodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+                </button>
+                {periodDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-[100]" 
+                      onClick={() => setPeriodDropdownOpen(false)}
+                    />
+                    <div className="absolute z-[110] mt-1 w-full bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                      {periodOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setPeriod(option.value);
+                            setPeriodDropdownOpen(false);
+                            if (option.value === 'custom') {
+                              setCustomDateOpen(true);
+                              setMonthSelectOpen(false);
+                            } else if (option.value === 'month-select') {
+                              setMonthSelectOpen(true);
+                              setCustomDateOpen(false);
+                            } else {
+                              setCustomDateOpen(false);
+                              setMonthSelectOpen(false);
+                              setSelectedMonth('');
+                            }
+                          }}
+                          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                            period === option.value 
+                              ? 'bg-blue-500/20 text-blue-400' 
+                              : 'bg-transparent text-slate-200'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              {period === 'month-select' && monthSelectOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-[100]" 
+                    onClick={() => {
+                      setMonthSelectOpen(false);
+                      if (!selectedMonth) {
+                        setPeriod('month');
+                      }
+                    }}
+                  />
+                  <div className="absolute top-full left-0 mt-2 z-[110] bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 min-w-[200px]">
+                    <div className="flex flex-col">
+                      <label className="text-sm font-medium text-slate-300 mb-2">📅 Selecionar Mês</label>
+                      <input 
+                        type="month" 
+                        value={selectedMonth} 
+                        onChange={(e) => {
+                          setSelectedMonth(e.target.value);
+                          setMonthSelectOpen(false);
+                          setPeriodDropdownOpen(false);
+                        }}
+                        className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        required
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+              {period === 'custom' && customDateOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-[100]" 
+                    onClick={() => {
+                      setCustomDateOpen(false);
+                      if (!startDate || !endDate) {
+                        setPeriod('month');
+                      }
+                    }}
+                  />
+                  <div className="absolute top-full left-0 mt-2 z-[110] bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 flex flex-col gap-2 min-w-[250px]">
+                    <div className="flex flex-col">
+                      <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Inicial</label>
+                      <input 
+                        type="date" 
+                        value={startDate} 
+                        onChange={(e) => setStartDate(e.target.value)} 
+                        className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        required
+                      />
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Final</label>
+                      <input 
+                        type="date" 
+                        value={endDate} 
+                        onChange={(e) => {
+                          setEndDate(e.target.value);
+                          if (startDate && e.target.value) {
+                            setCustomDateOpen(false);
+                          }
+                        }}
+                        min={startDate}
+                        className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        required
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-300 mb-2">Tipo</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white [&>option]:bg-slate-800 [&>option]:text-white"
               >
-                <option value="">Todos</option>
-                <option value="DEPOSIT">Depósito</option>
-                <option value="WITHDRAWAL">Saque</option>
+                <option value="" className="bg-slate-800 text-white">Todos</option>
+                <option value="DEPOSIT" className="bg-slate-800 text-white">Depósito</option>
+                <option value="WITHDRAWAL" className="bg-slate-800 text-white">Saque</option>
               </select>
             </div>
             <div>
@@ -509,7 +748,7 @@ export default function CashflowPage() {
         </div>
 
         {/* Tabela */}
-        <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden">
+        <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden relative z-10">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-800/50">
