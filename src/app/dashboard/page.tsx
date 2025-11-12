@@ -251,13 +251,13 @@ export default function DashboardPage() {
           <h2 className="text-2xl sm:text-3xl text-white mb-1 sm:mb-2">Dashboard</h2>
           <p className="text-sm sm:text-base text-slate-400">Visão geral dos seus trades</p>
         </div>
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <button 
             onClick={() => setPeriodDropdownOpen(!periodDropdownOpen)}
-            className="bg-white/10 hover:bg-white/15 text-white border border-white/20 px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 text-sm sm:text-base"
+            className="w-full sm:w-auto bg-white/10 hover:bg-white/15 text-white border border-white/20 px-3 sm:px-4 py-2 rounded-lg flex items-center justify-between gap-2 text-sm sm:text-base"
           >
-            <span>{getPeriodLabel()}</span>
-            <span className={`transition-transform ${periodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+            <span className="truncate">{getPeriodLabel()}</span>
+            <span className={`transition-transform flex-shrink-0 ${periodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
           </button>
           {periodDropdownOpen && (
             <>
@@ -265,7 +265,7 @@ export default function DashboardPage() {
                 className="fixed inset-0 z-10" 
                 onClick={() => setPeriodDropdownOpen(false)}
               />
-              <div className="absolute z-20 mt-1 right-0 w-48 bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+              <div className="absolute z-20 mt-1 right-0 sm:right-0 left-0 sm:left-auto w-full sm:w-48 bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
                 {periodOptions.map((option) => (
                   <button
                     key={option.value}
@@ -306,7 +306,7 @@ export default function DashboardPage() {
                   }
                 }}
               />
-              <div className="absolute top-full right-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 min-w-[200px]">
+              <div className="absolute top-full right-0 sm:right-0 left-0 sm:left-auto mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 w-full sm:w-auto min-w-[200px]">
                 <div className="flex flex-col">
                   <label className="text-sm font-medium text-slate-300 mb-2">📅 Selecionar Mês</label>
                   <input 
@@ -335,7 +335,7 @@ export default function DashboardPage() {
                   }
                 }}
               />
-              <div className="absolute top-full right-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 flex flex-col gap-2 min-w-[250px]">
+              <div className="absolute top-full right-0 sm:right-0 left-0 sm:left-auto mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 flex flex-col gap-2 w-full sm:w-auto min-w-[250px]">
                 <div className="flex flex-col">
                   <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Inicial</label>
                   <input 
@@ -426,12 +426,12 @@ export default function DashboardPage() {
 
       {/* PnL Chart */}
       <Card title="PnL Diário" icon="📊" subtitle="Evolução do lucro/prejuízo">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4 mb-4">
           <div className="text-sm text-slate-400">Últimos 30 dias</div>
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-xs text-slate-400">Hoje</p>
-              <p className={`flex items-center gap-1 ${todayPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className={`flex items-center gap-1 text-sm sm:text-base ${todayPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 <span>{todayPnl >= 0 ? '↗️' : '↘️'}</span>
                 R$ {Math.abs(todayPnl).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
@@ -439,13 +439,17 @@ export default function DashboardPage() {
           </div>
         </div>
         {daily.length > 0 ? (
-          <PnlLineChart data={daily} />
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[600px]">
+              <PnlLineChart data={daily} />
+            </div>
+          </div>
         ) : (
-          <div className="h-96 flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl">
-            <div className="text-center">
-              <div className="text-6xl mb-4">📊</div>
-              <h3 className="text-lg font-semibold text-slate-300 mb-2">Nenhum dado disponível</h3>
-              <p className="text-slate-500">Adicione trades para ver o gráfico de PnL</p>
+          <div className="h-64 sm:h-96 flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl">
+            <div className="text-center px-4">
+              <div className="text-4xl sm:text-6xl mb-4">📊</div>
+              <h3 className="text-base sm:text-lg font-semibold text-slate-300 mb-2">Nenhum dado disponível</h3>
+              <p className="text-sm sm:text-base text-slate-500">Adicione trades para ver o gráfico de PnL</p>
             </div>
           </div>
         )}
