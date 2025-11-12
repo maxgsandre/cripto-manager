@@ -50,17 +50,23 @@ export async function POST(req: NextRequest) {
       let totalTrades = 0;
 
       // Contar total de trades primeiro
-      for (const accountId of accountIds) {
-        const where: any = { accountId };
-        if (startDate && endDate) {
-          where.executedAt = {
-            gte: new Date(startDate + 'T00:00:00.000Z'),
-            lte: new Date(endDate + 'T23:59:59.999Z')
-          };
-        }
-        const count = await prisma.trade.count({ where });
-        totalTrades += count;
-      }
+          for (const accountId of accountIds) {
+            const where: {
+              accountId: string;
+              executedAt?: {
+                gte: Date;
+                lte: Date;
+              };
+            } = { accountId };
+            if (startDate && endDate) {
+              where.executedAt = {
+                gte: new Date(startDate + 'T00:00:00.000Z'),
+                lte: new Date(endDate + 'T23:59:59.999Z')
+              };
+            }
+            const count = await prisma.trade.count({ where });
+            totalTrades += count;
+          }
 
       if (totalTrades === 0) {
         await setProgress(jobId, {
@@ -86,7 +92,13 @@ export async function POST(req: NextRequest) {
 
       // Para cada conta, recalcular PnL
       for (const accountId of accountIds) {
-        const where: any = { accountId };
+        const where: {
+          accountId: string;
+          executedAt?: {
+            gte: Date;
+            lte: Date;
+          };
+        } = { accountId };
         if (startDate && endDate) {
           where.executedAt = {
             gte: new Date(startDate + 'T00:00:00.000Z'),
