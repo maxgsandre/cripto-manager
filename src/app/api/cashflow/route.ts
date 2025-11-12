@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
         executedAt: { gte: start, lte: end },
       },
     }),
-    // Calcular saldo inicial baseado em depósitos/saques anteriores ao período filtrado
+    // Calcular saldo inicial baseado em depósitos/saques E PnL dos trades anteriores ao período filtrado
     (async () => {
       try {
         // Buscar todos os cashflows anteriores ao início do período filtrado
@@ -134,7 +134,24 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        return balance.toString();
+        // Buscar PnL de todos os trades anteriores ao período filtrado
+        const previousTrades = await prisma.trade.findMany({
+          where: {
+            accountId: { in: accountIds },
+            executedAt: { lt: start },
+          },
+        });
+
+        // Somar o PnL dos trades anteriores
+        let previousPnL = 0;
+        for (const trade of previousTrades) {
+          previousPnL += Number(trade.realizedPnl);
+        }
+
+        // Saldo inicial = Cashflows anteriores + PnL dos trades anteriores
+        const initialBalance = balance + previousPnL;
+
+        return initialBalance.toString();
       } catch (error) {
         console.error('Error calculating initial balance:', error);
         return '0';

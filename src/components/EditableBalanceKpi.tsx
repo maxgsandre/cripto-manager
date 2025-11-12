@@ -160,21 +160,32 @@ function EditableBalanceKpi({ label, value, icon = '💳', color = 'purple', mon
 
       const token = await user.getIdToken();
       
+      // Se o valor estiver vazio, enviar string vazia para recalcular
+      const valueToSend = editValue.trim() === '' || editValue === '0' ? '' : editValue;
+      
       const response = await fetch('/api/monthly-balance', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ month, initialBalance: editValue })
+        body: JSON.stringify({ month, initialBalance: valueToSend })
       });
 
       if (response.ok) {
         const result = await response.json();
         setIsEditing(false);
-        setDisplayValue(result.balance || editValue);
+        // Atualizar com o valor retornado (pode ser calculado ou salvo)
+        setDisplayValue(result.balance || '0');
+        setEditValue(result.balance || '0');
+        
+        // Se foi recalculado, recarregar a página para atualizar todos os dados
+        if (result.calculated) {
+          window.location.reload();
+        }
       } else {
-        alert('Erro ao salvar saldo');
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        alert(`Erro ao salvar saldo: ${errorData.error || 'Erro desconhecido'}`);
       }
     } catch (error) {
       console.error('Error saving balance:', error);
@@ -200,7 +211,7 @@ function EditableBalanceKpi({ label, value, icon = '💳', color = 'purple', mon
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Ex: 1000"
+              placeholder="Deixe vazio para calcular automaticamente"
             />
             <button
               onClick={handleSave}
