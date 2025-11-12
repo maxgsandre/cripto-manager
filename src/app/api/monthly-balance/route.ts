@@ -34,9 +34,98 @@ export async function GET(req: NextRequest) {
       where: { userId_month: { userId, month } }
     });
 
+    // Se não há saldo salvo, calcular baseado no saldo final do mês anterior
+    // Saldo inicial do mês = Saldo final do mês anterior
+    // Saldo final do mês anterior = Saldo inicial do mês anterior + Depósitos - Saques + PnL
+    if (!balance || balance.initialBalance === '0') {
+      // Buscar contas do usuário
+      const userAccounts = await prisma.binanceAccount.findMany({
+        where: { userId },
+        select: { id: true }
+      });
+
+      if (userAccounts.length > 0) {
+        const accountIds = userAccounts.map(acc => acc.id);
+        
+        // Calcular mês anterior
+        const [year, monthNum] = month.split('-').map(Number);
+        const previousMonthStart = new Date(year, monthNum - 2, 1); // Mês anterior
+        const previousMonthEnd = new Date(year, monthNum - 1, 0, 23, 59, 59, 999); // Último dia do mês anterior
+        const previousMonthStr = `${previousMonthStart.getFullYear()}-${String(previousMonthStart.getMonth() + 1).padStart(2, '0')}`;
+        
+        // 1. Buscar saldo inicial do mês anterior (salvo ou calculado)
+        let previousMonthInitialBalance = '0';
+        const previousMonthBalance = await prisma.monthlyBalance.findUnique({
+          where: { userId_month: { userId, month: previousMonthStr } }
+        });
+        
+        if (previousMonthBalance) {
+          previousMonthInitialBalance = previousMonthBalance.initialBalance;
+        } else {
+          // Se não há saldo salvo, calcular baseado em cashflows anteriores ao mês anterior
+          const cashflowsBeforePreviousMonth = await prisma.cashflow.findMany({
+            where: {
+              accountId: { in: accountIds },
+              at: { lt: previousMonthStart },
+              asset: { in: ['BRL', 'brl'] },
+              NOT: [{ note: { contains: 'Expired' } }],
+            },
+          });
+          let calc = 0;
+          for (const cf of cashflowsBeforePreviousMonth) {
+            calc += Number(cf.amount); // amount já tem sinal
+          }
+          previousMonthInitialBalance = calc.toString();
+        }
+        
+        // 2. Buscar depósitos e saques do mês anterior
+        const previousMonthCashflows = await prisma.cashflow.findMany({
+          where: {
+            accountId: { in: accountIds },
+            at: { gte: previousMonthStart, lte: previousMonthEnd },
+            asset: { in: ['BRL', 'brl'] },
+            NOT: [{ note: { contains: 'Expired' } }],
+          },
+        });
+        
+        let previousMonthDepositsMinusWithdrawals = 0;
+        for (const cf of previousMonthCashflows) {
+          previousMonthDepositsMinusWithdrawals += Number(cf.amount); // amount já tem sinal
+        }
+        
+        // 3. Buscar PnL do mês anterior (trades)
+        const previousMonthTrades = await prisma.trade.findMany({
+          where: {
+            accountId: { in: accountIds },
+            executedAt: { gte: previousMonthStart, lte: previousMonthEnd },
+          },
+        });
+        
+        let previousMonthPnL = 0;
+        for (const t of previousMonthTrades) {
+          previousMonthPnL += Number(t.realizedPnl); // PnL pode ser positivo ou negativo
+        }
+        
+        // 4. Calcular saldo final do mês anterior
+        // Saldo final = Saldo inicial + Depósitos - Saques + PnL
+        const previousMonthFinalBalance = 
+          Number(previousMonthInitialBalance) + 
+          previousMonthDepositsMinusWithdrawals + 
+          previousMonthPnL;
+        
+        // 5. Saldo inicial do mês atual = Saldo final do mês anterior
+        return Response.json({ 
+          ok: true, 
+          balance: previousMonthFinalBalance.toString(),
+          calculated: true // Indica que é um valor calculado, não salvo
+        });
+      }
+    }
+
     return Response.json({ 
       ok: true, 
-      balance: balance?.initialBalance || '0' 
+      balance: balance?.initialBalance || '0',
+      calculated: false
     });
   } catch (error) {
     console.error('Error fetching balance:', error);
