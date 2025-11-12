@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     where.asset = asset;
   }
 
-  const [total, cashflows, tradesCount] = await Promise.all([
+  const [total, cashflows, tradesCount, calculatedInitialBalance] = await Promise.all([
     prisma.cashflow.count({ where }),
     prisma.cashflow.findMany({
       where,
@@ -104,6 +104,42 @@ export async function GET(req: NextRequest) {
         executedAt: { gte: start, lte: end },
       },
     }),
+    // Calcular saldo inicial baseado em depósitos/saques anteriores ao período filtrado
+    (async () => {
+      try {
+        // Buscar todos os cashflows anteriores ao início do período filtrado
+        const previousCashflows = await prisma.cashflow.findMany({
+          where: {
+            accountId: { in: accountIds },
+            at: { lt: start },
+            NOT: [
+              {
+                note: {
+                  contains: 'Expired'
+                }
+              }
+            ],
+          },
+          orderBy: { at: 'asc' },
+        });
+
+        // Somar apenas depósitos e saques em BRL
+        let balance = 0;
+        for (const cf of previousCashflows) {
+          // Considerar apenas transações em BRL
+          if (cf.asset === 'BRL' || cf.asset === 'brl') {
+            const amount = Number(cf.amount);
+            // amount já está com sinal: positivo para DEPOSIT, negativo para WITHDRAWAL
+            balance += amount;
+          }
+        }
+
+        return balance.toString();
+      } catch (error) {
+        console.error('Error calculating initial balance:', error);
+        return '0';
+      }
+    })(),
   ]);
 
   const rows = cashflows.map((cf) => ({
@@ -117,6 +153,35 @@ export async function GET(req: NextRequest) {
     note: cf.note || null,
   }));
 
-  return Response.json({ total, rows, tradesCount });
+  // Determinar o mês do período filtrado para buscar saldo salvo
+  let monthToSearch: string;
+  if (startDate) {
+    monthToSearch = startDate.substring(0, 7); // YYYY-MM
+  } else {
+    const now = new Date();
+    monthToSearch = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  // Buscar saldo inicial salvo do mês
+  let savedInitialBalance = '0';
+  try {
+    const monthlyBalance = await prisma.monthlyBalance.findUnique({
+      where: { userId_month: { userId, month: monthToSearch } }
+    });
+    if (monthlyBalance) {
+      savedInitialBalance = monthlyBalance.initialBalance;
+    }
+  } catch (error) {
+    console.error('Error fetching saved initial balance:', error);
+  }
+
+  return Response.json({ 
+    total, 
+    rows, 
+    tradesCount,
+    calculatedInitialBalance, // Saldo calculado baseado em depósitos/saques anteriores
+    savedInitialBalance, // Saldo editável salvo pelo usuário
+    month: monthToSearch, // Mês do período filtrado
+  });
 }
 

@@ -85,13 +85,25 @@ export async function GET(req: NextRequest) {
   }
   const tradesCount = trades.length;
 
-  // Bankroll up to month end using cashflows (deposits - withdrawals)
-  const cashflows = await prisma.cashflow.findMany({ where: { at: { lte: end } } });
+  // Bankroll up to month end using cashflows (deposits - withdrawals) - FILTRADO POR USUÁRIO
+  const cashflows = await prisma.cashflow.findMany({ 
+    where: { 
+      accountId: { in: accountIds }, // Filtrar apenas cashflows das contas do usuário
+      at: { lte: end },
+      asset: { in: ['BRL', 'brl'] }, // Apenas BRL
+      NOT: [
+        {
+          note: {
+            contains: 'Expired'
+          }
+        }
+      ],
+    } 
+  });
   let bankroll = 0;
   for (const c of cashflows) {
-    const amt = toNum(c.amount);
-    if ((c.type || '').toUpperCase() === 'WITHDRAWAL') bankroll -= amt;
-    else bankroll += amt;
+    // amount já tem sinal: positivo para DEPOSIT, negativo para WITHDRAWAL
+    bankroll += toNum(c.amount);
   }
   const roi = bankroll === 0 ? 0 : pnl / bankroll;
 
