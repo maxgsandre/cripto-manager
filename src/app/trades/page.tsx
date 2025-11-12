@@ -98,22 +98,30 @@ function getMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// Função para obter período baseado na seleção
-function getPeriodFilter(period: string): string {
+// Função para obter período baseado na seleção (igual ao dashboard)
+function getPeriodFilter(period: string): { month?: string; startDate?: string; endDate?: string } {
   const now = new Date();
   switch (period) {
-    case 'today':
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    case 'week':
+    case 'today': {
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { month: today };
+    }
+    case 'week': {
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - now.getDay());
-      return `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      const weekEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      return { startDate: weekStartStr, endDate: weekEndStr };
+    }
     case 'month':
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    case 'year':
-      return `${now.getFullYear()}`;
+      return { month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}` };
+    case 'year': {
+      const yearStart = `${now.getFullYear()}-01-01`;
+      const yearEnd = `${now.getFullYear()}-12-31`;
+      return { startDate: yearStart, endDate: yearEnd };
+    }
     default:
-      return getMonth();
+      return { month: getMonth() };
   }
 }
 
@@ -122,6 +130,7 @@ export default function TradesPage() {
   const [period, setPeriod] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [market, setMarket] = useState('');
   const [symbol, setSymbol] = useState('');
   const [page, setPage] = useState(1);
@@ -152,6 +161,8 @@ export default function TradesPage() {
   const [recalcStartDate, setRecalcStartDate] = useState('');
   const [recalcEndDate, setRecalcEndDate] = useState('');
   const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
+  const [customDateOpen, setCustomDateOpen] = useState(false);
+  const [monthSelectOpen, setMonthSelectOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{
     jobId: string | null;
@@ -172,23 +183,24 @@ export default function TradesPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Para período "year", usar startDate e endDate em vez de month
+      // Lógica igual ao dashboard
       let currentMonth: string;
       let useStartEnd = false;
       
-      if (period === 'year') {
-        const now = new Date();
-        const yearStart = `${now.getFullYear()}-01-01`;
-        const yearEnd = `${now.getFullYear()}-12-31`;
-        currentMonth = `${yearStart}_${yearEnd}`;
-        useStartEnd = true;
-      } else if (period === 'custom' && startDate && endDate) {
+      if (period === 'custom' && startDate && endDate) {
+        // Período customizado: usar startDate e endDate
         currentMonth = `${startDate}_${endDate}`;
         useStartEnd = true;
-      } else if (period === 'custom') {
-        currentMonth = month;
+      } else if (period === 'month-select' && selectedMonth) {
+        // Mês selecionado: usar o mês escolhido
+        currentMonth = selectedMonth;
       } else {
-        currentMonth = getPeriodFilter(period);
+        // Outros períodos: usar getPeriodFilter
+        const periodFilter = getPeriodFilter(period);
+        currentMonth = periodFilter.month || month;
+        if (periodFilter.startDate && periodFilter.endDate) {
+          useStartEnd = true;
+        }
       }
       
       type ApiTrade = {
@@ -230,13 +242,15 @@ export default function TradesPage() {
       if (market) params.set('market', market);
       if (symbol) params.set('symbol', symbol);
       if (useStartEnd) {
-        if (period === 'year') {
-          const now = new Date();
-          params.set('startDate', `${now.getFullYear()}-01-01`);
-          params.set('endDate', `${now.getFullYear()}-12-31`);
-        } else if (period === 'custom' && startDate && endDate) {
+        if (period === 'custom' && startDate && endDate) {
           params.set('startDate', startDate);
           params.set('endDate', endDate);
+        } else {
+          const periodFilter = getPeriodFilter(period);
+          if (periodFilter.startDate && periodFilter.endDate) {
+            params.set('startDate', periodFilter.startDate);
+            params.set('endDate', periodFilter.endDate);
+          }
         }
       }
       
@@ -277,7 +291,7 @@ export default function TradesPage() {
     };
     
     fetchData();
-  }, [month, period, startDate, endDate, market, symbol, page, pageSize]);
+  }, [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize]);
 
   const handleExportCSV = async () => {
     const user = auth.currentUser;
@@ -287,32 +301,32 @@ export default function TradesPage() {
     let currentMonth: string;
     let useStartEnd = false;
     
-    if (period === 'year') {
-      const now = new Date();
-      const yearStart = `${now.getFullYear()}-01-01`;
-      const yearEnd = `${now.getFullYear()}-12-31`;
-      currentMonth = `${yearStart}_${yearEnd}`;
-      useStartEnd = true;
-    } else if (period === 'custom' && startDate && endDate) {
+    if (period === 'custom' && startDate && endDate) {
       currentMonth = `${startDate}_${endDate}`;
       useStartEnd = true;
-    } else if (period === 'custom') {
-      currentMonth = month;
+    } else if (period === 'month-select' && selectedMonth) {
+      currentMonth = selectedMonth;
     } else {
-      currentMonth = getPeriodFilter(period);
+      const periodFilter = getPeriodFilter(period);
+      currentMonth = periodFilter.month || month;
+      if (periodFilter.startDate && periodFilter.endDate) {
+        useStartEnd = true;
+      }
     }
     
     const params = new URLSearchParams({ month: currentMonth });
     if (market) params.set('market', market);
     if (symbol) params.set('symbol', symbol);
     if (useStartEnd) {
-      if (period === 'year') {
-        const now = new Date();
-        params.set('startDate', `${now.getFullYear()}-01-01`);
-        params.set('endDate', `${now.getFullYear()}-12-31`);
-      } else if (period === 'custom' && startDate && endDate) {
+      if (period === 'custom' && startDate && endDate) {
         params.set('startDate', startDate);
         params.set('endDate', endDate);
+      } else {
+        const periodFilter = getPeriodFilter(period);
+        if (periodFilter.startDate && periodFilter.endDate) {
+          params.set('startDate', periodFilter.startDate);
+          params.set('endDate', periodFilter.endDate);
+        }
       }
     }
     
@@ -345,32 +359,32 @@ export default function TradesPage() {
     let currentMonth: string;
     let useStartEnd = false;
     
-    if (period === 'year') {
-      const now = new Date();
-      const yearStart = `${now.getFullYear()}-01-01`;
-      const yearEnd = `${now.getFullYear()}-12-31`;
-      currentMonth = `${yearStart}_${yearEnd}`;
-      useStartEnd = true;
-    } else if (period === 'custom' && startDate && endDate) {
+    if (period === 'custom' && startDate && endDate) {
       currentMonth = `${startDate}_${endDate}`;
       useStartEnd = true;
-    } else if (period === 'custom') {
-      currentMonth = month;
+    } else if (period === 'month-select' && selectedMonth) {
+      currentMonth = selectedMonth;
     } else {
-      currentMonth = getPeriodFilter(period);
+      const periodFilter = getPeriodFilter(period);
+      currentMonth = periodFilter.month || month;
+      if (periodFilter.startDate && periodFilter.endDate) {
+        useStartEnd = true;
+      }
     }
     
     const params = new URLSearchParams({ month: currentMonth });
     if (market) params.set('market', market);
     if (symbol) params.set('symbol', symbol);
     if (useStartEnd) {
-      if (period === 'year') {
-        const now = new Date();
-        params.set('startDate', `${now.getFullYear()}-01-01`);
-        params.set('endDate', `${now.getFullYear()}-12-31`);
-      } else if (period === 'custom' && startDate && endDate) {
+      if (period === 'custom' && startDate && endDate) {
         params.set('startDate', startDate);
         params.set('endDate', endDate);
+      } else {
+        const periodFilter = getPeriodFilter(period);
+        if (periodFilter.startDate && periodFilter.endDate) {
+          params.set('startDate', periodFilter.startDate);
+          params.set('endDate', periodFilter.endDate);
+        }
       }
     }
     
@@ -399,11 +413,19 @@ export default function TradesPage() {
     { value: 'today', label: '📅 Hoje' },
     { value: 'week', label: '📆 Esta Semana' },
     { value: 'month', label: '📅 Este Mês' },
+    { value: 'month-select', label: '📆 Selecionar Mês' },
     { value: 'year', label: '📅 Este Ano' },
     { value: 'custom', label: '🔧 Personalizado' },
   ];
 
   const getPeriodLabel = () => {
+    if (period === 'month-select' && selectedMonth) {
+      const date = new Date(selectedMonth + '-01');
+      return `📅 ${date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+    }
+    if (period === 'custom' && startDate && endDate) {
+      return `🔧 ${new Date(startDate).toLocaleDateString('pt-BR')} - ${new Date(endDate).toLocaleDateString('pt-BR')}`;
+    }
     const option = periodOptions.find(opt => opt.value === period);
     return option ? option.label : '📅 Este Mês';
   };
@@ -874,6 +896,17 @@ export default function TradesPage() {
                       onClick={() => {
                         setPeriod(option.value);
                         setPeriodDropdownOpen(false);
+                        if (option.value === 'custom') {
+                          setCustomDateOpen(true);
+                          setMonthSelectOpen(false);
+                        } else if (option.value === 'month-select') {
+                          setMonthSelectOpen(true);
+                          setCustomDateOpen(false);
+                        } else {
+                          setCustomDateOpen(false);
+                          setMonthSelectOpen(false);
+                          setSelectedMonth('');
+                        }
                       }}
                       className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
                         period === option.value ? 'bg-blue-500/20 text-blue-400' : 'text-white'
@@ -886,32 +919,77 @@ export default function TradesPage() {
               </>
             )}
           </div>
+          {period === 'month-select' && monthSelectOpen && (
+            <>
+              <div 
+                className="fixed inset-0 z-25" 
+                onClick={() => {
+                  setMonthSelectOpen(false);
+                  if (!selectedMonth) {
+                    setPeriod('month');
+                  }
+                }}
+              />
+              <div className="absolute top-full right-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 min-w-[200px]">
+                <div className="flex flex-col">
+                  <label className="text-sm font-medium text-slate-300 mb-2">📅 Selecionar Mês</label>
+                  <input 
+                    type="month" 
+                    value={selectedMonth} 
+                    onChange={(e) => {
+                      setSelectedMonth(e.target.value);
+                      setMonthSelectOpen(false);
+                      setPeriodDropdownOpen(false);
+                    }}
+                    className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    required
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          {period === 'custom' && customDateOpen && (
+            <>
+              <div 
+                className="fixed inset-0 z-25" 
+                onClick={() => {
+                  setCustomDateOpen(false);
+                  if (!startDate || !endDate) {
+                    setPeriod('month');
+                  }
+                }}
+              />
+              <div className="absolute top-full right-0 mt-2 z-30 bg-slate-800 border border-white/10 rounded-lg shadow-xl p-4 flex flex-col gap-2 min-w-[250px]">
+                <div className="flex flex-col">
+                  <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Inicial</label>
+                  <input 
+                    type="date" 
+                    value={startDate} 
+                    onChange={(e) => setStartDate(e.target.value)} 
+                    className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    required
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Final</label>
+                  <input 
+                    type="date" 
+                    value={endDate} 
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      if (startDate && e.target.value) {
+                        setCustomDateOpen(false);
+                      }
+                    }}
+                    min={startDate}
+                    className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    required
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
-        {period === 'custom' && (
-          <>
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Inicial</label>
-              <input 
-                type="date" 
-                value={startDate} 
-                onChange={(e) => setStartDate(e.target.value)} 
-                className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                required
-              />
-            </div>
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-slate-300 mb-1">📅 Data Final</label>
-              <input 
-                type="date" 
-                value={endDate} 
-                onChange={(e) => setEndDate(e.target.value)} 
-                min={startDate}
-                className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                required
-              />
-            </div>
-          </>
-        )}
         <div className="flex flex-col">
           <label className="text-sm font-medium text-slate-300 mb-1">🏪 Market</label>
           <input 
