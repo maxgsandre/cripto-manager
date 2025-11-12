@@ -1223,14 +1223,14 @@ export default function TradesPage() {
       columnHelper.accessor('price', { 
         header: '💵 Preço',
         cell: ({ getValue, row }) => (
-          <span className={`font-mono ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</span>
+          <span className={`font-mono whitespace-nowrap ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</span>
         )
       }),
       columnHelper.accessor('feeValue', { 
         header: '💸 Taxa',
         cell: ({ getValue, row }) => (
           <div className="text-sm">
-            <div className={`font-mono ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</div>
+            <div className={`font-mono whitespace-nowrap ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</div>
             <div className="text-xs text-gray-500">{row.original.feeAsset}</div>
           </div>
         )
@@ -1241,7 +1241,7 @@ export default function TradesPage() {
         cell: ({ row }) => {
           const volume = calculateVolume(row.original.qty, row.original.price);
           return (
-            <span className={`font-mono font-semibold text-purple-400 ${row.original._isGroup ? 'underline' : ''}`}>
+            <span className={`font-mono font-semibold text-purple-400 whitespace-nowrap ${row.original._isGroup ? 'underline' : ''}`}>
               {formatCurrency(volume)}
             </span>
           );
@@ -1252,7 +1252,7 @@ export default function TradesPage() {
         cell: ({ getValue }) => {
           const pnl = Number(getValue());
           return (
-            <span className={`font-semibold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className={`font-semibold whitespace-nowrap ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {formatCurrency(pnl)}
             </span>
           );
@@ -1264,7 +1264,7 @@ export default function TradesPage() {
         cell: ({ row }) => {
           const roi = calculateTradeROI(row.original.realizedPnl, row.original.qty, row.original.price);
           return (
-            <span className={`font-semibold ${roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className={`font-semibold whitespace-nowrap ${roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {formatPercentage(roi)}
             </span>
           );
