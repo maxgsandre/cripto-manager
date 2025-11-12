@@ -385,6 +385,156 @@ export default function CashflowPage() {
     }
   };
 
+  const handleExportCSV = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const token = await user.getIdToken();
+    const params = new URLSearchParams();
+    
+    // Aplicar lógica de período igual ao fetchData
+    if (period === 'custom' && startDate && endDate) {
+      params.set('startDate', startDate);
+      params.set('endDate', endDate);
+    } else if (period === 'month-select' && selectedMonth) {
+      const [year, monthNum] = selectedMonth.split('-').map(Number);
+      const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+      const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+      params.set('startDate', monthStart);
+      params.set('endDate', monthEnd);
+    } else {
+      const periodFilter = getPeriodFilter(period, earliestDate);
+      if (periodFilter.startDate && periodFilter.endDate) {
+        params.set('startDate', periodFilter.startDate);
+        params.set('endDate', periodFilter.endDate);
+      } else if (periodFilter.month) {
+        const [year, monthNum] = periodFilter.month.split('-').map(Number);
+        const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+        const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+        params.set('startDate', monthStart);
+        params.set('endDate', monthEnd);
+      }
+    }
+    
+    // Aplicar filtros de tipo e moeda (mesmo que vazio, para manter consistência)
+    if (type) params.set('type', type);
+    if (asset) params.set('asset', asset);
+    
+    // Gerar nome do arquivo baseado no período
+    let filename = 'cashflow';
+    if (period === 'custom' && startDate && endDate) {
+      filename = `cashflow_${startDate}_${endDate}.csv`;
+    } else if (period === 'month-select' && selectedMonth) {
+      filename = `cashflow_${selectedMonth}.csv`;
+    } else if (period === 'all') {
+      filename = `cashflow_todos.csv`;
+    } else {
+      const periodFilter = getPeriodFilter(period, earliestDate);
+      if (periodFilter.startDate && periodFilter.endDate) {
+        filename = `cashflow_${periodFilter.startDate}_${periodFilter.endDate}.csv`;
+      } else if (periodFilter.month) {
+        filename = `cashflow_${periodFilter.month}.csv`;
+      } else {
+        filename = `cashflow_${getMonth()}.csv`;
+      }
+    }
+    
+    try {
+      const response = await fetch(`/api/export/cashflow/csv?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      alert('Erro ao exportar CSV');
+    }
+  };
+
+  const handleExportPDF = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const token = await user.getIdToken();
+    const params = new URLSearchParams();
+    
+    // Aplicar lógica de período igual ao fetchData
+    if (period === 'custom' && startDate && endDate) {
+      params.set('startDate', startDate);
+      params.set('endDate', endDate);
+    } else if (period === 'month-select' && selectedMonth) {
+      const [year, monthNum] = selectedMonth.split('-').map(Number);
+      const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+      const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+      params.set('startDate', monthStart);
+      params.set('endDate', monthEnd);
+    } else {
+      const periodFilter = getPeriodFilter(period, earliestDate);
+      if (periodFilter.startDate && periodFilter.endDate) {
+        params.set('startDate', periodFilter.startDate);
+        params.set('endDate', periodFilter.endDate);
+      } else if (periodFilter.month) {
+        const [year, monthNum] = periodFilter.month.split('-').map(Number);
+        const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+        const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+        params.set('startDate', monthStart);
+        params.set('endDate', monthEnd);
+      }
+    }
+    
+    // Aplicar filtros de tipo e moeda (mesmo que vazio, para manter consistência)
+    if (type) params.set('type', type);
+    if (asset) params.set('asset', asset);
+    
+    // Gerar nome do arquivo baseado no período
+    let filename = 'cashflow';
+    if (period === 'custom' && startDate && endDate) {
+      filename = `cashflow_${startDate}_${endDate}.pdf`;
+    } else if (period === 'month-select' && selectedMonth) {
+      filename = `cashflow_${selectedMonth}.pdf`;
+    } else if (period === 'all') {
+      filename = `cashflow_todos.pdf`;
+    } else {
+      const periodFilter = getPeriodFilter(period, earliestDate);
+      if (periodFilter.startDate && periodFilter.endDate) {
+        filename = `cashflow_${periodFilter.startDate}_${periodFilter.endDate}.pdf`;
+      } else if (periodFilter.month) {
+        filename = `cashflow_${periodFilter.month}.pdf`;
+      } else {
+        filename = `cashflow_${getMonth()}.pdf`;
+      }
+    }
+    
+    try {
+      const response = await fetch(`/api/export/cashflow/pdf?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      alert('Erro ao exportar PDF');
+    }
+  };
+
   const importCSV = async () => {
     if (!importFile || !importAccountId) {
       alert('Selecione um arquivo CSV e uma conta');
@@ -563,6 +713,22 @@ export default function CashflowPage() {
               <span>📄</span>
               <span className="hidden sm:inline">Importar CSV</span>
               <span className="sm:hidden">Importar</span>
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+            >
+              <span>📊</span>
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">CSV</span>
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+            >
+              <span>📄</span>
+              <span className="hidden sm:inline">Export PDF</span>
+              <span className="sm:hidden">PDF</span>
             </button>
           </div>
         </div>
