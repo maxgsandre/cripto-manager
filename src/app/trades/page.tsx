@@ -615,10 +615,20 @@ export default function TradesPage() {
       const token = await user.getIdToken();
       let totalInserted = 0;
       let totalUpdated = 0;
+      const skippedFiles: Array<{ name: string; reason: string }> = [];
 
       // Função para processar um arquivo
       const processFile = async (file: File, fileIndex: number, totalFiles: number): Promise<boolean> => {
-        return new Promise((resolve) => {
+        return new Promise(async (resolve) => {
+          // Verificar se arquivo está muito pequeno (provavelmente vazio)
+          // Mas não ler o conteúdo aqui para não consumir o arquivo
+          if (file.size < 100) {
+            skippedFiles.push({ name: file.name, reason: 'Arquivo muito pequeno (provavelmente vazio)' });
+            console.warn(`Arquivo ${file.name} muito pequeno (${file.size} bytes), pulando...`);
+            resolve(true); // Retornar true para continuar com os próximos
+            return;
+          }
+
           const formData = new FormData();
           formData.append('file', file);
           formData.append('accountId', importAccountId);
@@ -633,8 +643,21 @@ export default function TradesPage() {
             .then((response) => response.json())
             .then((result) => {
               if (result.error) {
-                alert(`Erro ao importar ${file.name}: ${result.error}`);
-                resolve(false);
+                // Se for erro de arquivo vazio, apenas pular sem alert
+                if (result.error.includes('empty') || result.error.includes('invalid')) {
+                  skippedFiles.push({ name: file.name, reason: result.error });
+                  console.warn(`Arquivo ${file.name} pulado: ${result.error}`);
+                  resolve(true); // Continuar com os próximos
+                  return;
+                }
+                // Para outros erros, mostrar alert mas perguntar se continua
+                const shouldContinue = confirm(`Erro ao importar ${file.name}: ${result.error}\n\nDeseja continuar com os próximos arquivos?`);
+                if (!shouldContinue) {
+                  resolve(false);
+                  return;
+                }
+                skippedFiles.push({ name: file.name, reason: result.error });
+                resolve(true); // Continuar mesmo com erro
                 return;
               }
 
@@ -727,32 +750,40 @@ export default function TradesPage() {
       // Processar arquivos sequencialmente
       for (let i = 0; i < importFiles.length; i++) {
         const success = await processFile(importFiles[i], i, importFiles.length);
-        if (!success && i < importFiles.length - 1) {
-          const continueImport = confirm(`Erro ao importar ${importFiles[i].name}. Deseja continuar com os próximos arquivos?`);
-          if (!continueImport) {
-            setImportProgress(null);
-            return;
-          }
+        if (!success) {
+          // Se retornar false, significa que o usuário cancelou
+          setImportProgress(null);
+          return;
         }
       }
 
       // Importação concluída
+      let completionMessage = `Importação concluída! ${totalInserted} inseridos, ${totalUpdated} atualizados.`;
+      if (skippedFiles.length > 0) {
+        completionMessage += `\n\n${skippedFiles.length} arquivo(s) pulado(s):\n${skippedFiles.map(f => `- ${f.name}: ${f.reason}`).join('\n')}`;
+      }
+
       setImportProgress({
         jobId: null,
         percent: 100,
-        message: `Importação concluída! ${totalInserted} inseridos, ${totalUpdated} atualizados.`,
+        message: completionMessage,
         status: 'completed',
         result: { inserted: totalInserted, updated: totalUpdated },
         currentFile: importFiles.length,
         totalFiles: importFiles.length,
       });
 
+      // Mostrar alerta com resumo se houver arquivos pulados
+      if (skippedFiles.length > 0) {
+        alert(completionMessage);
+      }
+
       setTimeout(() => {
         setImportProgress(null);
         setShowImportModal(false);
         setImportFiles([]);
         window.location.reload();
-      }, 3000);
+      }, skippedFiles.length > 0 ? 5000 : 3000);
     } catch (error) {
       alert(`Erro ao importar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
       setImportProgress(null);
