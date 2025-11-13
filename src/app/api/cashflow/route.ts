@@ -104,58 +104,10 @@ export async function GET(req: NextRequest) {
         executedAt: { gte: start, lte: end },
       },
     }),
-    // Calcular saldo inicial baseado em depósitos/saques E PnL dos trades anteriores ao período filtrado
+    // Saldo inicial calculado removido - deve ser preenchido manualmente
+    // A API da Binance não fornece saldo histórico, então não podemos calcular automaticamente
     (async () => {
-      try {
-        // Buscar todos os cashflows anteriores ao início do período filtrado
-        const previousCashflows = await prisma.cashflow.findMany({
-          where: {
-            accountId: { in: accountIds },
-            at: { lt: start },
-            NOT: [
-              {
-                note: {
-                  contains: 'Expired'
-                }
-              }
-            ],
-          },
-          orderBy: { at: 'asc' },
-        });
-
-        // Somar apenas depósitos e saques em BRL
-        let balance = 0;
-        for (const cf of previousCashflows) {
-          // Considerar apenas transações em BRL
-          if (cf.asset === 'BRL' || cf.asset === 'brl') {
-            const amount = Number(cf.amount);
-            // amount já está com sinal: positivo para DEPOSIT, negativo para WITHDRAWAL
-            balance += amount;
-          }
-        }
-
-        // Buscar PnL de todos os trades anteriores ao período filtrado
-        const previousTrades = await prisma.trade.findMany({
-          where: {
-            accountId: { in: accountIds },
-            executedAt: { lt: start },
-          },
-        });
-
-        // Somar o PnL dos trades anteriores
-        let previousPnL = 0;
-        for (const trade of previousTrades) {
-          previousPnL += Number(trade.realizedPnl);
-        }
-
-        // Saldo inicial = Cashflows anteriores + PnL dos trades anteriores
-        const initialBalance = balance + previousPnL;
-
-        return initialBalance.toString();
-      } catch (error) {
-        console.error('Error calculating initial balance:', error);
-        return '0';
-      }
+      return '0';
     })(),
     // Calcular totais de TODAS as transações filtradas (não apenas paginadas)
     (async () => {

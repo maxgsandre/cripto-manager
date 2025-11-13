@@ -16,104 +16,8 @@ async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
   }
 }
 
-// Função auxiliar para calcular o saldo inicial automaticamente
-async function calculateInitialBalance(userId: string, month: string): Promise<string> {
-  // Buscar contas do usuário
-  const userAccounts = await prisma.binanceAccount.findMany({
-    where: { userId },
-    select: { id: true }
-  });
-
-  if (userAccounts.length === 0) {
-    return '0';
-  }
-
-  const accountIds = userAccounts.map(acc => acc.id);
-  
-  // Calcular mês anterior
-  const [year, monthNum] = month.split('-').map(Number);
-  const previousMonthStart = new Date(year, monthNum - 2, 1); // Mês anterior
-  const previousMonthEnd = new Date(year, monthNum - 1, 0, 23, 59, 59, 999); // Último dia do mês anterior
-  const previousMonthStr = `${previousMonthStart.getFullYear()}-${String(previousMonthStart.getMonth() + 1).padStart(2, '0')}`;
-  
-  // 1. Buscar saldo inicial do mês anterior (salvo ou calculado)
-  let previousMonthInitialBalance = '0';
-  const previousMonthBalance = await prisma.monthlyBalance.findUnique({
-    where: { userId_month: { userId, month: previousMonthStr } }
-  });
-  
-  if (previousMonthBalance) {
-    previousMonthInitialBalance = previousMonthBalance.initialBalance;
-  } else {
-    // Se não há saldo salvo, calcular baseado em cashflows E PnL dos trades anteriores ao mês anterior
-    const cashflowsBeforePreviousMonth = await prisma.cashflow.findMany({
-      where: {
-        accountId: { in: accountIds },
-        at: { lt: previousMonthStart },
-        asset: { in: ['BRL', 'brl'] },
-        NOT: [{ note: { contains: 'Expired' } }],
-      },
-    });
-    let calc = 0;
-    for (const cf of cashflowsBeforePreviousMonth) {
-      calc += Number(cf.amount); // amount já tem sinal
-    }
-    
-    // Buscar PnL dos trades anteriores ao mês anterior
-    const tradesBeforePreviousMonth = await prisma.trade.findMany({
-      where: {
-        accountId: { in: accountIds },
-        executedAt: { lt: previousMonthStart },
-      },
-    });
-    
-    let previousPnL = 0;
-    for (const t of tradesBeforePreviousMonth) {
-      previousPnL += Number(t.realizedPnl);
-    }
-    
-    // Saldo inicial do mês anterior = Cashflows anteriores + PnL dos trades anteriores
-    previousMonthInitialBalance = (calc + previousPnL).toString();
-  }
-  
-  // 2. Buscar depósitos e saques do mês anterior
-  const previousMonthCashflows = await prisma.cashflow.findMany({
-    where: {
-      accountId: { in: accountIds },
-      at: { gte: previousMonthStart, lte: previousMonthEnd },
-      asset: { in: ['BRL', 'brl'] },
-      NOT: [{ note: { contains: 'Expired' } }],
-    },
-  });
-  
-  let previousMonthDepositsMinusWithdrawals = 0;
-  for (const cf of previousMonthCashflows) {
-    previousMonthDepositsMinusWithdrawals += Number(cf.amount); // amount já tem sinal
-  }
-  
-  // 3. Buscar PnL do mês anterior (trades)
-  const previousMonthTrades = await prisma.trade.findMany({
-    where: {
-      accountId: { in: accountIds },
-      executedAt: { gte: previousMonthStart, lte: previousMonthEnd },
-    },
-  });
-  
-  let previousMonthPnL = 0;
-  for (const t of previousMonthTrades) {
-    previousMonthPnL += Number(t.realizedPnl); // PnL pode ser positivo ou negativo
-  }
-  
-  // 4. Calcular saldo final do mês anterior
-  // Saldo final = Saldo inicial + Depósitos - Saques + PnL
-  const previousMonthFinalBalance = 
-    Number(previousMonthInitialBalance) + 
-    previousMonthDepositsMinusWithdrawals + 
-    previousMonthPnL;
-  
-  // 5. Saldo inicial do mês atual = Saldo final do mês anterior
-  return previousMonthFinalBalance.toString();
-}
+// Função removida: cálculo automático desabilitado
+// A API da Binance não fornece saldo histórico, então o saldo inicial deve ser preenchido manualmente
 
 export async function GET(req: NextRequest) {
   const userId = await getUserIdFromToken(req);
@@ -133,15 +37,13 @@ export async function GET(req: NextRequest) {
       where: { userId_month: { userId, month } }
     });
 
-    // Se não há saldo salvo, calcular baseado no saldo final do mês anterior
-    // Saldo inicial do mês = Saldo final do mês anterior
-    // Saldo final do mês anterior = Saldo inicial do mês anterior + Depósitos - Saques + PnL
+    // Se não há saldo salvo, retornar 0 (deve ser preenchido manualmente)
+    // A API da Binance não fornece saldo histórico, então não podemos calcular automaticamente
     if (!balance || balance.initialBalance === '0') {
-      const calculatedBalance = await calculateInitialBalance(userId, month);
       return Response.json({ 
         ok: true, 
-        balance: calculatedBalance,
-        calculated: true // Indica que é um valor calculado, não salvo
+        balance: '0',
+        calculated: false // Não calculado, deve ser preenchido manualmente
       });
     }
 
@@ -175,7 +77,7 @@ export async function PUT(req: NextRequest) {
     const isEmpty = !initialBalance || initialBalance === '' || initialBalance === '0' || initialBalance === null || initialBalance === undefined;
     
     if (isEmpty) {
-      // Deletar o registro se existir (usando deleteMany para evitar erro se não existir)
+      // Deletar o registro se existir
       try {
         await prisma.monthlyBalance.delete({
           where: { userId_month: { userId, month } }
@@ -188,14 +90,12 @@ export async function PUT(req: NextRequest) {
         }
       }
       
-      // Calcular o saldo automaticamente
-      const calculatedBalance = await calculateInitialBalance(userId, month);
-      
-      console.log(`[MonthlyBalance] Saldo deletado e recalculado: userId=${userId}, month=${month}, calculatedBalance=${calculatedBalance}`);
+      // Retornar 0 quando deletado (deve ser preenchido manualmente)
+      console.log(`[MonthlyBalance] Saldo deletado: userId=${userId}, month=${month}`);
       return Response.json({ 
         ok: true, 
-        balance: calculatedBalance,
-        calculated: true // Indica que é um valor calculado, não salvo
+        balance: '0',
+        calculated: false // Não calculado, deve ser preenchido manualmente
       });
     }
 

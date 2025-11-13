@@ -229,130 +229,15 @@ export async function getTrades(
       if (monthlyBalance) {
         balanceBRL = monthlyBalance.initialBalance;
       } else {
-        // Se não há saldo salvo, calcular baseado no saldo final do mês anterior
-        // Saldo inicial do mês atual = Saldo final do mês anterior
-        // Saldo final do mês anterior = Saldo inicial do mês anterior + Depósitos - Saques + PnL
-        if (query.accountIds && query.accountIds.length > 0) {
-          // Calcular mês anterior
-          const [year, monthNum] = monthToSearch.split('-').map(Number);
-          const previousMonthStart = new Date(year, monthNum - 2, 1); // Mês anterior
-          const previousMonthEnd = new Date(year, monthNum - 1, 0, 23, 59, 59, 999); // Último dia do mês anterior
-          const previousMonthStr = `${previousMonthStart.getFullYear()}-${String(previousMonthStart.getMonth() + 1).padStart(2, '0')}`;
-          
-          // 1. Buscar saldo inicial do mês anterior (salvo ou calculado recursivamente)
-          let previousMonthInitialBalance = '0';
-          const previousMonthBalance = await prisma.monthlyBalance.findUnique({
-            where: { userId_month: { userId: query.userId, month: previousMonthStr } }
-          });
-          
-          if (previousMonthBalance) {
-            previousMonthInitialBalance = previousMonthBalance.initialBalance;
-          } else {
-            // Se não há saldo salvo, calcular recursivamente (saldo final do mês anterior ao anterior)
-            // Calcular baseado em todos os cashflows E PnL dos trades anteriores ao mês anterior
-            const cashflowsBeforePreviousMonth = await prisma.cashflow.findMany({
-              where: {
-                accountId: { in: query.accountIds },
-                at: { lt: previousMonthStart },
-                asset: { in: ['BRL', 'brl'] },
-                NOT: [{ note: { contains: 'Expired' } }],
-              },
-            });
-            let calc = 0;
-            for (const cf of cashflowsBeforePreviousMonth) {
-              calc += Number(cf.amount); // amount já tem sinal: positivo para DEPOSIT, negativo para WITHDRAWAL
-            }
-            
-            // Buscar PnL dos trades anteriores ao mês anterior
-            const tradesBeforePreviousMonth = await prisma.trade.findMany({
-              where: {
-                accountId: { in: query.accountIds },
-                executedAt: { lt: previousMonthStart },
-              },
-            });
-            
-            let previousPnL = 0;
-            for (const t of tradesBeforePreviousMonth) {
-              previousPnL += toNumber(t.realizedPnl);
-            }
-            
-            // Saldo inicial do mês anterior = Cashflows anteriores + PnL dos trades anteriores
-            previousMonthInitialBalance = (calc + previousPnL).toString();
-          }
-          
-          // 2. Buscar depósitos e saques do mês anterior (cashflows)
-          const previousMonthCashflows = await prisma.cashflow.findMany({
-            where: {
-              accountId: { in: query.accountIds },
-              at: { gte: previousMonthStart, lte: previousMonthEnd },
-              asset: { in: ['BRL', 'brl'] },
-              NOT: [{ note: { contains: 'Expired' } }],
-            },
-          });
-          
-          let previousMonthDepositsMinusWithdrawals = 0;
-          for (const cf of previousMonthCashflows) {
-            // amount já tem sinal: positivo para DEPOSIT, negativo para WITHDRAWAL
-            previousMonthDepositsMinusWithdrawals += Number(cf.amount);
-          }
-          
-          // 3. Buscar PnL do mês anterior (trades)
-          const previousMonthTrades = await prisma.trade.findMany({
-            where: {
-              accountId: { in: query.accountIds },
-              executedAt: { gte: previousMonthStart, lte: previousMonthEnd },
-            },
-          });
-          
-          let previousMonthPnL = 0;
-          for (const t of previousMonthTrades) {
-            previousMonthPnL += toNumber(t.realizedPnl); // PnL pode ser positivo ou negativo
-          }
-          
-          // 4. Calcular saldo final do mês anterior
-          // Saldo final = Saldo inicial + Depósitos - Saques + PnL
-          const previousMonthFinalBalance = 
-            Number(previousMonthInitialBalance) + 
-            previousMonthDepositsMinusWithdrawals + 
-            previousMonthPnL;
-          
-          // 5. Saldo inicial do mês atual = Saldo final do mês anterior
-          balanceBRL = previousMonthFinalBalance.toString();
-          
-          console.log(`[getTrades] Saldo inicial calculado para ${monthToSearch}: ${balanceBRL}`);
-          console.log(`  - Saldo inicial do mês anterior (${previousMonthStr}): ${previousMonthInitialBalance}`);
-          console.log(`  - Depósitos - Saques do mês anterior: ${previousMonthDepositsMinusWithdrawals}`);
-          console.log(`  - PnL do mês anterior: ${previousMonthPnL}`);
-          console.log(`  - Saldo final do mês anterior: ${previousMonthFinalBalance}`);
-        }
+        // Se não há saldo salvo, retornar 0 (deve ser preenchido manualmente)
+        // A API da Binance não fornece saldo histórico, então não podemos calcular automaticamente
+        balanceBRL = '0';
       }
     } else {
       // Se não há userId, não buscar saldo salvo (segurança)
       console.warn('[getTrades] userId não fornecido, não buscando saldo inicial salvo');
-      // Ainda pode calcular baseado em cashflows se houver accountIds
-      if (query.accountIds && query.accountIds.length > 0) {
-        const previousCashflows = await prisma.cashflow.findMany({
-          where: {
-            accountId: { in: query.accountIds },
-            at: { lt: start },
-            asset: { in: ['BRL', 'brl'] },
-            NOT: [
-              {
-                note: {
-                  contains: 'Expired'
-                }
-              }
-            ],
-          },
-          orderBy: { at: 'asc' },
-        });
-
-        let calculatedBalance = 0;
-        for (const cf of previousCashflows) {
-          calculatedBalance += Number(cf.amount);
-        }
-        balanceBRL = calculatedBalance.toString();
-      }
+      // Retornar 0 - deve ser preenchido manualmente
+      balanceBRL = '0';
     }
   } catch (error) {
     console.error('Erro ao buscar saldo inicial:', error);
