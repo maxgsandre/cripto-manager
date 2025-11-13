@@ -162,36 +162,14 @@ export async function GET(req: NextRequest) {
     doc.moveDown(0.5);
     doc.fontSize(10);
     
-    // Cabeçalho da tabela
-    const tableTop = doc.y;
-    doc.text('Data/Hora', 50, tableTop);
-    doc.text('Conta', 150, tableTop);
-    doc.text('Tipo', 220, tableTop);
-    doc.text('Moeda', 270, tableTop);
-    doc.text('Valor', 320, tableTop);
-    doc.text('Observações', 400, tableTop);
-    
-    let y = tableTop + 20;
-    const pageHeight = 750;
-    
+    // Listar transações de forma simples
     for (const cf of cashflows) {
-      if (y > pageHeight) {
-        doc.addPage();
-        y = 48;
-      }
-      
       const dateStr = new Date(cf.at).toLocaleString('pt-BR');
       const amount = toNum(cf.amount);
       const amountStr = amount >= 0 ? `R$ ${amount.toFixed(2)}` : `-R$ ${Math.abs(amount).toFixed(2)}`;
       
-      doc.text(dateStr.substring(0, 16), 50, y);
-      doc.text(cf.account.name.substring(0, 15), 150, y);
-      doc.text(cf.type, 220, y);
-      doc.text(cf.asset, 270, y);
-      doc.text(amountStr, 320, y);
-      doc.text((cf.note || '').substring(0, 30), 400, y);
-      
-      y += 15;
+      doc.text(`${dateStr.substring(0, 16)} | ${cf.account.name} | ${cf.type} | ${cf.asset} | ${amountStr} | ${(cf.note || '').substring(0, 40)}`);
+      doc.moveDown(0.2);
     }
   }
 
