@@ -95,36 +95,9 @@ export async function getTrades(
     orderBy: { executedAt: 'asc' }, // Ordenar por data para calcular drawdown corretamente
   })) as unknown as DbTrade[];
 
-  // Buscar cashflows do período para incluir no cálculo mesmo sem trades
-  let cashflowPnL = 0;
-  try {
-    if (query.accountIds && query.accountIds.length > 0) {
-      const cashflows = await prisma.cashflow.findMany({
-        where: {
-          accountId: { in: query.accountIds },
-          at: { gte: start, lte: end },
-          asset: { in: ['BRL', 'brl'] }, // Apenas BRL
-          NOT: [
-            {
-              note: {
-                contains: 'Expired'
-              }
-            }
-          ],
-        },
-        orderBy: { at: 'asc' },
-      });
-
-      // Somar cashflows (amount já tem sinal: positivo para DEPOSIT, negativo para WITHDRAWAL)
-      for (const cf of cashflows) {
-        cashflowPnL += Number(cf.amount);
-      }
-      
-      console.log(`[getTrades] Cashflows encontrados: ${cashflows.length}, PnL total: ${cashflowPnL}`);
-    }
-  } catch (error) {
-    console.error('Error fetching cashflows for summary:', error);
-  }
+  // Cashflows removidos do cálculo de PnL
+  // Cashflows são movimentações de dinheiro (depósitos/saques), não lucro
+  // O PnL deve representar apenas o lucro/prejuízo das operações de trading
 
   // Calcular summary com TODOS os trades filtrados
   let pnl = 0;
@@ -245,11 +218,12 @@ export async function getTrades(
 
   const losingTrades = total - wins;
   
-  // PnL total inclui trades + cashflows do período
-  const totalPnL = pnl + cashflowPnL;
+  // PnL total = apenas PnL dos trades (sem incluir cashflows)
+  // Cashflows são movimentações de dinheiro, não lucro/prejuízo
+  const totalPnL = pnl;
   
   const summary = {
-    pnlMonth: totalPnL.toString(), // Inclui cashflows
+    pnlMonth: totalPnL.toString(), // Apenas PnL dos trades
     feesTotal: fees.toString(),
     avgFeePct: (allFilteredTrades.length > 0 ? (feePctSum / allFilteredTrades.length) : 0).toString(),
     tradesCount: total,
