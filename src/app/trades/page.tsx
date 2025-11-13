@@ -140,6 +140,9 @@ export default function TradesPage() {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [market, setMarket] = useState('');
   const [symbol, setSymbol] = useState('');
+  const [availableMarkets, setAvailableMarkets] = useState<string[]>([]);
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([]);
+  const [loadingFilters, setLoadingFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
@@ -199,7 +202,7 @@ export default function TradesPage() {
     error?: string;
   } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importFiles, setImportFiles] = useState<File[]>([]);
   const [importAccountId, setImportAccountId] = useState('');
   const [accounts, setAccounts] = useState<{ id: string; name: string; market?: string }[]>([]);
   const [importProgress, setImportProgress] = useState<{
@@ -209,6 +212,9 @@ export default function TradesPage() {
     status: 'running' | 'completed' | 'error';
     result?: { inserted: number; updated: number };
     error?: string;
+    currentFile?: number;
+    totalFiles?: number;
+    fileName?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -236,6 +242,36 @@ export default function TradesPage() {
     };
 
     fetchEarliestDate();
+  }, []);
+
+  // Buscar markets e symbols disponíveis
+  useEffect(() => {
+    const fetchFilters = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      setLoadingFilters(true);
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/trades/filters', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableMarkets(data.markets || []);
+          setAvailableSymbols(data.symbols || []);
+        }
+      } catch (error) {
+        console.error('Error fetching filters:', error);
+      } finally {
+        setLoadingFilters(false);
+      }
+    };
+
+    fetchFilters();
   }, []);
 
   const [incompleteJobs, setIncompleteJobs] = useState<Array<{
@@ -567,8 +603,8 @@ export default function TradesPage() {
   };
 
   const importCSV = async () => {
-    if (!importFile || !importAccountId) {
-      alert('Selecione um arquivo CSV e uma conta');
+    if (importFiles.length === 0 || !importAccountId) {
+      alert('Selecione pelo menos um arquivo CSV e uma conta');
       return;
     }
 
@@ -577,84 +613,146 @@ export default function TradesPage() {
       if (!user) return;
 
       const token = await user.getIdToken();
-      const formData = new FormData();
-      formData.append('file', importFile);
-      formData.append('accountId', importAccountId);
+      let totalInserted = 0;
+      let totalUpdated = 0;
 
-      const response = await fetch('/api/trades/import-csv', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
+      // Função para processar um arquivo
+      const processFile = async (file: File, fileIndex: number, totalFiles: number): Promise<boolean> => {
+        return new Promise((resolve) => {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('accountId', importAccountId);
+
+          fetch('/api/trades/import-csv', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          })
+            .then((response) => response.json())
+            .then((result) => {
+              if (result.error) {
+                alert(`Erro ao importar ${file.name}: ${result.error}`);
+                resolve(false);
+                return;
+              }
+
+              if (result.jobId) {
+                setImportProgress({
+                  jobId: result.jobId,
+                  percent: 0,
+                  message: `Processando ${file.name} (${fileIndex + 1}/${totalFiles})...`,
+                  status: 'running',
+                  currentFile: fileIndex + 1,
+                  totalFiles: totalFiles,
+                  fileName: file.name,
+                });
+
+                const pollInterval = setInterval(async () => {
+                  try {
+                    const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    const status = await statusResponse.json();
+
+                    if (status.error) {
+                      clearInterval(pollInterval);
+                      if (window.__tradesImportPollInterval === pollInterval) {
+                        window.__tradesImportPollInterval = null;
+                      }
+                      setImportProgress(null);
+                      alert(`Erro ao importar ${file.name}: ${status.error}`);
+                      resolve(false);
+                      return;
+                    }
+
+                    // Calcular percentual geral considerando arquivos anteriores
+                    const fileProgress = status.percent || 0;
+                    const overallPercent = Math.round(((fileIndex * 100) + fileProgress) / totalFiles);
+
+                    setImportProgress({
+                      jobId: status.jobId,
+                      percent: overallPercent,
+                      message: `${file.name} (${fileIndex + 1}/${totalFiles}): ${status.message || 'Processando...'}`,
+                      status: status.status,
+                      result: status.result,
+                      error: status.error,
+                      currentFile: fileIndex + 1,
+                      totalFiles: totalFiles,
+                      fileName: file.name,
+                    });
+
+                    if (status.status === 'completed') {
+                      clearInterval(pollInterval);
+                      if (window.__tradesImportPollInterval === pollInterval) {
+                        window.__tradesImportPollInterval = null;
+                      }
+                      if (status.result) {
+                        totalInserted += status.result.inserted || 0;
+                        totalUpdated += status.result.updated || 0;
+                      }
+                      resolve(true);
+                    } else if (status.status === 'error') {
+                      clearInterval(pollInterval);
+                      if (window.__tradesImportPollInterval === pollInterval) {
+                        window.__tradesImportPollInterval = null;
+                      }
+                      alert(`Erro ao importar ${file.name}: ${status.error || 'Erro desconhecido'}`);
+                      resolve(false);
+                    }
+                  } catch (error) {
+                    console.error('Error polling status:', error);
+                    clearInterval(pollInterval);
+                    if (window.__tradesImportPollInterval === pollInterval) {
+                      window.__tradesImportPollInterval = null;
+                    }
+                    resolve(false);
+                  }
+                }, 1000);
+
+                window.__tradesImportPollInterval = pollInterval;
+              } else {
+                alert(`Erro: jobId não retornado para ${file.name}`);
+                resolve(false);
+              }
+            })
+            .catch((error) => {
+              alert(`Erro ao importar ${file.name}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+              resolve(false);
+            });
+        });
+      };
+
+      // Processar arquivos sequencialmente
+      for (let i = 0; i < importFiles.length; i++) {
+        const success = await processFile(importFiles[i], i, importFiles.length);
+        if (!success && i < importFiles.length - 1) {
+          const continueImport = confirm(`Erro ao importar ${importFiles[i].name}. Deseja continuar com os próximos arquivos?`);
+          if (!continueImport) {
+            setImportProgress(null);
+            return;
+          }
+        }
+      }
+
+      // Importação concluída
+      setImportProgress({
+        jobId: null,
+        percent: 100,
+        message: `Importação concluída! ${totalInserted} inseridos, ${totalUpdated} atualizados.`,
+        status: 'completed',
+        result: { inserted: totalInserted, updated: totalUpdated },
+        currentFile: importFiles.length,
+        totalFiles: importFiles.length,
       });
 
-      const result = await response.json();
-
-      if (result.error) {
-        alert(`Erro: ${result.error}`);
-        return;
-      }
-
-      if (result.jobId) {
-        setImportProgress({
-          jobId: result.jobId,
-          percent: 0,
-          message: 'Iniciando importação...',
-          status: 'running',
-        });
-
-        const pollInterval = setInterval(async () => {
-          try {
-            const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            const status = await statusResponse.json();
-
-            if (status.error) {
-              if (pollInterval) clearInterval(pollInterval);
-              setImportProgress(null);
-              alert(`Erro: ${status.error}`);
-              return;
-            }
-
-            setImportProgress({
-              jobId: status.jobId,
-              percent: status.percent || 0,
-              message: status.message || 'Processando...',
-              status: status.status,
-              result: status.result,
-              error: status.error,
-            });
-
-            if (status.status === 'completed') {
-              if (pollInterval) clearInterval(pollInterval);
-              setTimeout(() => {
-                if (status.result) {
-                  alert(`Importação concluída! ${status.result.inserted || 0} inseridos, ${status.result.updated || 0} atualizados.`);
-                }
-                setImportProgress(null);
-                setShowImportModal(false);
-                setImportFile(null);
-                window.location.reload();
-              }, 2000);
-            } else if (status.status === 'error') {
-              if (pollInterval) clearInterval(pollInterval);
-              setTimeout(() => {
-                alert(`Erro na importação: ${status.error || 'Erro desconhecido'}`);
-                setImportProgress(null);
-              }, 2000);
-            }
-          } catch (error) {
-            console.error('Error polling status:', error);
-            if (pollInterval) clearInterval(pollInterval);
-          }
-        }, 1000);
-
-        window.__tradesImportPollInterval = pollInterval;
-      } else {
-        alert('Erro: jobId não retornado');
-      }
+      setTimeout(() => {
+        setImportProgress(null);
+        setShowImportModal(false);
+        setImportFiles([]);
+        window.location.reload();
+      }, 3000);
     } catch (error) {
       alert(`Erro ao importar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
       setImportProgress(null);
@@ -1508,21 +1606,30 @@ export default function TradesPage() {
         </div>
         <div className="flex flex-col w-full sm:w-auto">
           <label className="text-sm font-medium text-slate-300 mb-1">🏪 Market</label>
-          <input 
+          <select 
             value={market} 
             onChange={(e) => setMarket(e.target.value)} 
-            placeholder="SPOT/FUTURES" 
-            className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-          />
+            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">Todos</option>
+            {availableMarkets.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-col w-full sm:w-auto">
           <label className="text-sm font-medium text-slate-300 mb-1">💰 Symbol</label>
-          <input 
+          <select 
             value={symbol} 
             onChange={(e) => setSymbol(e.target.value)} 
-            placeholder="e.g. BTCBRL" 
-            className="border border-white/10 bg-white/5 text-white placeholder-slate-400 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-          />
+            className="border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={loadingFilters}
+          >
+            <option value="">Todos</option>
+            {availableSymbols.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 w-full sm:w-auto">
           <button
@@ -1961,7 +2068,20 @@ export default function TradesPage() {
                     <div className="font-semibold mb-1">✓ Importação concluída!</div>
                     <div>
                       {importProgress.result.inserted || 0} inseridos, {importProgress.result.updated || 0} atualizados
+                      {importProgress.totalFiles && importProgress.totalFiles > 1 && (
+                        <span className="block mt-1 text-xs">
+                          ({importProgress.currentFile}/{importProgress.totalFiles} arquivos processados)
+                        </span>
+                      )}
                     </div>
+                  </div>
+                )}
+                {importProgress.currentFile && importProgress.totalFiles && importProgress.totalFiles > 1 && importProgress.status === 'running' && (
+                  <div className="text-xs text-slate-400 mt-2">
+                    Arquivo {importProgress.currentFile} de {importProgress.totalFiles}
+                    {importProgress.fileName && (
+                      <span className="block mt-1 text-slate-500">📄 {importProgress.fileName}</span>
+                    )}
                   </div>
                 )}
                 {importProgress.status === 'error' && (
@@ -1972,8 +2092,8 @@ export default function TradesPage() {
                     {importProgress.jobId && (
                       <button
                         onClick={async () => {
-                          if (!importFile || !importAccountId) {
-                            alert('Por favor, selecione o mesmo arquivo CSV e conta para retomar a importação.');
+                          if (importFiles.length === 0 || !importAccountId) {
+                            alert('Por favor, selecione os mesmos arquivos CSV e conta para retomar a importação.');
                             return;
                           }
                           
@@ -1988,8 +2108,9 @@ export default function TradesPage() {
                           
                           try {
                             const token = await user.getIdToken();
+                            // Retomar apenas o arquivo atual (primeiro arquivo por enquanto)
                             const formData = new FormData();
-                            formData.append('file', importFile);
+                            formData.append('file', importFiles[0]);
                             formData.append('accountId', importAccountId);
                             if (importProgress.jobId) {
                               formData.append('jobId', importProgress.jobId);
@@ -2050,7 +2171,7 @@ export default function TradesPage() {
                                       }
                                       setImportProgress(null);
                                       setShowImportModal(false);
-                                      setImportFile(null);
+                                      setImportFiles([]);
                                       window.location.reload();
                                     }, 2000);
                                   } else if (status.status === 'error') {
@@ -2111,7 +2232,7 @@ export default function TradesPage() {
                             
                             setImportProgress(null);
                             setShowImportModal(false);
-                            setImportFile(null);
+                            setImportFiles([]);
                             alert('✅ Importação cancelada com sucesso!');
                           } else {
                             alert('Erro ao cancelar importação');
@@ -2144,8 +2265,8 @@ export default function TradesPage() {
                           </span>
                           <button
                             onClick={async () => {
-                              if (!importFile || !importAccountId) {
-                                alert('Por favor, selecione o mesmo arquivo CSV e conta para retomar.');
+                              if (importFiles.length === 0 || !importAccountId) {
+                                alert('Por favor, selecione os mesmos arquivos CSV e conta para retomar.');
                                 return;
                               }
                               
@@ -2160,7 +2281,8 @@ export default function TradesPage() {
                               try {
                                 const token = await user.getIdToken();
                                 const formData = new FormData();
-                                formData.append('file', importFile);
+                                // Retomar apenas o primeiro arquivo por enquanto
+                                formData.append('file', importFiles[0]);
                                 formData.append('accountId', importAccountId);
                                 formData.append('jobId', job.jobId);
                                 
@@ -2219,7 +2341,7 @@ export default function TradesPage() {
                                           }
                                           setImportProgress(null);
                                           setShowImportModal(false);
-                                          setImportFile(null);
+                                          setImportFiles([]);
                                           window.location.reload();
                                         }, 2000);
                                       } else if (status.status === 'error') {
@@ -2268,30 +2390,45 @@ export default function TradesPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-slate-300 text-sm mb-2">Arquivo CSV</label>
+                  <label className="block text-slate-300 text-sm mb-2">Arquivos CSV</label>
                   <input
                     type="file"
                     accept=".csv"
+                    multiple
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setImportFile(file);
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 0) {
+                        setImportFiles(files);
                       }
                     }}
                     className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-500 file:text-white hover:file:bg-purple-600"
                   />
                   <p className="text-xs text-slate-400 mt-1">
-                    Selecione o arquivo CSV exportado da Binance com o histórico de trades
+                    Selecione um ou mais arquivos CSV exportados da Binance com o histórico de trades
                   </p>
+                  {importFiles.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-slate-300 font-semibold">
+                        {importFiles.length} arquivo(s) selecionado(s):
+                      </p>
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {importFiles.map((file, index) => (
+                          <div key={index} className="text-xs text-slate-400 bg-white/5 px-2 py-1 rounded">
+                            {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-3">
                   <button 
                     onClick={importCSV}
-                    disabled={!importFile || !importAccountId || !!importProgress}
+                    disabled={importFiles.length === 0 || !importAccountId || !!importProgress}
                     className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Importar
+                    Importar {importFiles.length > 0 ? `(${importFiles.length})` : ''}
                   </button>
                   <button 
                     onClick={() => {
@@ -2301,7 +2438,7 @@ export default function TradesPage() {
                       }
                       setShowImportModal(false);
                       setImportProgress(null);
-                      setImportFile(null);
+                      setImportFiles([]);
                     }}
                     className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200"
                   >
