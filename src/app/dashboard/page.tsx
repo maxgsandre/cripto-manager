@@ -84,6 +84,7 @@ function aggregateDaily(rows: TradeRow[]) {
 
 export default function DashboardPage() {
   const [data, setData] = useState<TradesResponse | null>(null);
+  const [previousPeriodData, setPreviousPeriodData] = useState<TradesResponse | null>(null);
   const [currentBalanceBRL, setCurrentBalanceBRL] = useState('0');
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [currentMonthInitialBalance, setCurrentMonthInitialBalance] = useState('0');
@@ -181,6 +182,51 @@ export default function DashboardPage() {
       try {
         const tradesData = await fetchTrades(monthParam || '', startDateParam, endDateParam);
         setData(tradesData);
+
+        // Buscar dados do período anterior para comparação
+        let previousMonthParam: string | undefined;
+        let previousStartDateParam: string | undefined;
+        let previousEndDateParam: string | undefined;
+
+        if (period === 'month') {
+          // Mês anterior
+          const now = new Date();
+          const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          previousMonthParam = `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, '0')}`;
+        } else if (period === 'week') {
+          // Semana anterior
+          const now = new Date();
+          const weekStart = new Date(now);
+          weekStart.setDate(now.getDate() - now.getDay() - 7);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+          previousStartDateParam = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+          previousEndDateParam = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+        } else if (period === 'year') {
+          // Ano anterior
+          const now = new Date();
+          const previousYear = now.getFullYear() - 1;
+          previousStartDateParam = `${previousYear}-01-01`;
+          previousEndDateParam = `${previousYear}-12-31`;
+        } else if (period === 'month-select' && selectedMonth) {
+          // Mês anterior ao selecionado
+          const selected = new Date(selectedMonth + '-01');
+          const previous = new Date(selected.getFullYear(), selected.getMonth() - 1, 1);
+          previousMonthParam = `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        if (previousMonthParam || (previousStartDateParam && previousEndDateParam)) {
+          try {
+            const previousData = await fetchTrades(previousMonthParam || '', previousStartDateParam, previousEndDateParam);
+            setPreviousPeriodData(previousData);
+            console.log('Previous period data loaded:', previousData?.summary);
+          } catch (err) {
+            console.error('Error fetching previous period data:', err);
+            setPreviousPeriodData(null);
+          }
+        } else {
+          setPreviousPeriodData(null);
+        }
       } catch (err) {
         console.error('Error fetching trades:', err);
         setData(null);
@@ -275,6 +321,84 @@ export default function DashboardPage() {
         PnL Binance: {isPositive ? '+' : ''}R$ {pnlBinance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </span>
     );
+  };
+
+  // Calcular variação percentual do PnL comparado com período anterior
+  const calculatePnLTrend = () => {
+    if (!data) return null;
+    const currentPnL = Number(data.summary.pnlMonth);
+    
+    // Se houver dados do período anterior, calcular variação
+    if (previousPeriodData) {
+      const previousPnL = Number(previousPeriodData.summary.pnlMonth);
+      if (previousPnL !== 0) {
+        const variation = ((currentPnL - previousPnL) / Math.abs(previousPnL)) * 100;
+        return {
+          value: variation >= 0 ? `+${variation.toFixed(1)}%` : `${variation.toFixed(1)}%`,
+          trend: variation >= 0 ? 'up' : 'down'
+        };
+      }
+    }
+    
+    // Se não houver comparação, mostrar como percentual do saldo inicial (se houver)
+    const initialBalance = Number(data.summary.initialBalance);
+    if (initialBalance > 0) {
+      const pctOfInitial = (currentPnL / initialBalance) * 100;
+      return {
+        value: pctOfInitial >= 0 ? `+${pctOfInitial.toFixed(1)}%` : `${pctOfInitial.toFixed(1)}%`,
+        trend: pctOfInitial >= 0 ? 'up' : 'down'
+      };
+    }
+    
+    // Se não houver saldo inicial, mostrar o valor absoluto do PnL (sempre que houver dados)
+    // Mesmo que seja 0, vamos mostrar para manter consistência
+    const absValue = Math.abs(currentPnL);
+    return {
+      value: currentPnL >= 0 ? `+R$ ${absValue.toFixed(2)}` : `-R$ ${absValue.toFixed(2)}`,
+      trend: currentPnL >= 0 ? 'up' : 'down'
+    };
+  };
+
+  // Calcular variação percentual do ROI comparado com período anterior
+  const calculateROITrend = () => {
+    if (!data) return null;
+    const currentInitialBalance = Number(data.summary.initialBalance);
+    if (currentInitialBalance === 0) return null;
+    
+    const currentROI = (Number(data.summary.pnlMonth) / currentInitialBalance) * 100;
+    
+    // Se houver dados do período anterior, calcular variação
+    if (previousPeriodData) {
+      const previousInitialBalance = Number(previousPeriodData.summary.initialBalance);
+      if (previousInitialBalance > 0) {
+        const previousROI = (Number(previousPeriodData.summary.pnlMonth) / previousInitialBalance) * 100;
+        const variation = currentROI - previousROI;
+        return {
+          value: variation >= 0 ? `+${variation.toFixed(1)}%` : `${variation.toFixed(1)}%`,
+          trend: variation >= 0 ? 'up' : 'down'
+        };
+      }
+    }
+    
+    // Se não houver comparação, mostrar o ROI atual como indicador
+    if (currentROI !== 0) {
+      return {
+        value: currentROI >= 0 ? `+${currentROI.toFixed(1)}%` : `${currentROI.toFixed(1)}%`,
+        trend: currentROI >= 0 ? 'up' : 'down'
+      };
+    }
+    
+    return null;
+  };
+
+  // Contar trades de hoje
+  const getTodayTradesCount = () => {
+    if (!data) return 0;
+    const today = new Date().toISOString().slice(0, 10);
+    return data.rows.filter(row => {
+      const rowDate = new Date(row.executedAt).toISOString().slice(0, 10);
+      return rowDate === today;
+    }).length;
   };
 
   return (
@@ -425,8 +549,20 @@ export default function DashboardPage() {
           value={`R$ ${Number(summary.pnlMonth).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
           icon="💰" 
           color="blue"
-          trend={Number(summary.pnlMonth) >= 0 ? 'up' : 'down'}
-          trendValue={Number(summary.pnlMonth) >= 0 ? '+12.5%' : '-5.2%'}
+          trend={(() => {
+            const trend = calculatePnLTrend();
+            return trend ? trend.trend : (Number(summary.pnlMonth) >= 0 ? 'up' : 'down');
+          })()}
+          trendValue={(() => {
+            const trend = calculatePnLTrend();
+            if (trend) {
+              console.log('PnL Trend calculated:', trend);
+              return trend.value;
+            }
+            console.log('PnL Trend is null - data:', data?.summary, 'previousPeriodData:', previousPeriodData?.summary);
+            // Se não houver comparação, não mostrar nada (ou podemos mostrar o valor absoluto)
+            return undefined;
+          })()}
           subValue={
             (loadingBalance || loadingInitialBalance)
               ? <span className="text-slate-400 animate-pulse">Carregando...</span>
@@ -441,8 +577,14 @@ export default function DashboardPage() {
           } 
           icon="📈" 
           color="green"
-          trend={Number(summary.pnlMonth) >= 0 ? 'up' : 'down'}
-          trendValue={Number(summary.pnlMonth) >= 0 ? '+2.1%' : '-1.8%'}
+          trend={(() => {
+            const trend = calculateROITrend();
+            return trend ? trend.trend : (Number(summary.pnlMonth) >= 0 ? 'up' : 'down');
+          })()}
+          trendValue={(() => {
+            const trend = calculateROITrend();
+            return trend ? trend.value : undefined;
+          })()}
           subValue={
             (loadingBalance || loadingInitialBalance)
               ? <span className="text-slate-400 animate-pulse">Carregando...</span>
@@ -454,8 +596,8 @@ export default function DashboardPage() {
           value={summary.tradesCount} 
           icon="📊" 
           color="orange"
-          trend="up"
-          trendValue="+4 hoje"
+          trend={getTodayTradesCount() > 0 ? 'up' : 'neutral'}
+          trendValue={getTodayTradesCount() > 0 ? `+${getTodayTradesCount()} hoje` : undefined}
         />
       </div>
 
