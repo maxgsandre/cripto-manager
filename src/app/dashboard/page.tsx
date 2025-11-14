@@ -551,7 +551,7 @@ export default function DashboardPage() {
           color="blue"
           trend={(() => {
             const trend = calculatePnLTrend();
-            return trend ? trend.trend : (Number(summary.pnlMonth) >= 0 ? 'up' : 'down');
+            return (trend ? trend.trend : (Number(summary.pnlMonth) >= 0 ? 'up' : 'down')) as 'up' | 'down' | 'neutral';
           })()}
           trendValue={(() => {
             const trend = calculatePnLTrend();
@@ -579,7 +579,7 @@ export default function DashboardPage() {
           color="green"
           trend={(() => {
             const trend = calculateROITrend();
-            return trend ? trend.trend : (Number(summary.pnlMonth) >= 0 ? 'up' : 'down');
+            return (trend ? trend.trend : (Number(summary.pnlMonth) >= 0 ? 'up' : 'down')) as 'up' | 'down' | 'neutral';
           })()}
           trendValue={(() => {
             const trend = calculateROITrend();
