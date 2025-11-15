@@ -631,45 +631,6 @@ export default function DashboardPage() {
           </div>
         )}
       </Card>
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="relative overflow-hidden rounded-xl border-white/10 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 backdrop-blur-sm hover:from-emerald-500/20 hover:to-emerald-500/10 transition-all duration-300 cursor-pointer group">
-          <div className="p-6 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <span className="text-white text-xl">📈</span>
-            </div>
-            <div>
-              <p className="text-white">Nova Operação</p>
-              <p className="text-sm text-slate-400">Registrar trade</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative overflow-hidden rounded-xl border-white/10 bg-gradient-to-br from-blue-500/10 to-blue-500/5 backdrop-blur-sm hover:from-blue-500/20 hover:to-blue-500/10 transition-all duration-300 cursor-pointer group">
-          <div className="p-6 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <span className="text-white text-xl">📊</span>
-            </div>
-            <div>
-              <p className="text-white">Análise Detalhada</p>
-              <p className="text-sm text-slate-400">Ver relatório</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative overflow-hidden rounded-xl border-white/10 bg-gradient-to-br from-purple-500/10 to-purple-500/5 backdrop-blur-sm hover:from-purple-500/20 hover:to-purple-500/10 transition-all duration-300 cursor-pointer group">
-          <div className="p-6 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-purple-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <span className="text-white text-xl">💰</span>
-            </div>
-            <div>
-              <p className="text-white">Gerenciar Carteira</p>
-              <p className="text-sm text-slate-400">Adicionar fundos</p>
-            </div>
-          </div>
-        </div>
-      </div>
       </div>
     </InternalLayout>
   );
