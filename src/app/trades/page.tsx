@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Toolbar } from '@/components/Toolbar';
 import InternalLayout from '@/components/InternalLayout';
 import { auth } from '@/lib/firebase/client';
+import { onAuthStateChanged } from 'firebase/auth';
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 
 // Estender Window para incluir __syncPollInterval e __tradesImportPollInterval
@@ -353,116 +354,136 @@ export default function TradesPage() {
   }, [showImportModal]); // Buscar sempre que o modal for aberto
 
   useEffect(() => {
-    const fetchData = async () => {
-      // Lógica igual ao dashboard
-      let currentMonth: string;
-      let useStartEnd = false;
-      
-      if (period === 'custom' && startDate && endDate) {
-        // Período customizado: usar startDate e endDate
-        currentMonth = `${startDate}_${endDate}`;
-        useStartEnd = true;
-      } else if (period === 'month-select' && selectedMonth) {
-        // Mês selecionado: usar o mês escolhido
-        currentMonth = selectedMonth;
-      } else {
-        // Outros períodos: usar getPeriodFilter (passar earliestDate para 'all')
-        const periodFilter = getPeriodFilter(period, earliestDate);
-        currentMonth = periodFilter.month || month;
-        if (periodFilter.startDate && periodFilter.endDate) {
-          useStartEnd = true;
-        }
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setRows([]);
+        setTotal(0);
+        setSummary(null);
+        return;
       }
-      
-      type ApiTrade = {
-        executedAt: string | Date;
-        exchange: string;
-        market: string;
-        symbol: string;
-        side: string;
-        qty: string;
-        price: string;
-        feeValue: string;
-        feeAsset: string;
-        feePct: string;
-        realizedPnl: string;
-        orderId?: string | null;
-        tradeId?: string | null;
-        orderType?: string | null;
-      };
-      type ApiResponse = {
-        total: number;
-        rows: ApiTrade[];
-        summary: {
-          pnlMonth: string;
-          feesTotal: string;
-          avgFeePct: string;
-          tradesCount: number;
-          winRate: number;
-          initialBalance: string;
-          bestTrade: string;
-          worstTrade: string;
-          totalVolume: string;
-          maxDrawdown: string;
-          currentDrawdown: string;
-          winningTrades: number;
-          losingTrades: number;
-        };
-      };
-      const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
-      if (market) params.set('market', market);
-      if (symbol) params.set('symbol', symbol);
-      if (useStartEnd) {
+
+      const fetchData = async () => {
+        // Lógica igual ao dashboard
+        let currentMonth: string;
+        let useStartEnd = false;
+        
         if (period === 'custom' && startDate && endDate) {
-          params.set('startDate', startDate);
-          params.set('endDate', endDate);
+          // Período customizado: usar startDate e endDate
+          currentMonth = `${startDate}_${endDate}`;
+          useStartEnd = true;
+        } else if (period === 'month-select' && selectedMonth) {
+          // Mês selecionado: usar o mês escolhido
+          currentMonth = selectedMonth;
         } else {
-          const periodFilter = getPeriodFilter(period, earliestDate);
-          if (periodFilter.startDate && periodFilter.endDate) {
-            params.set('startDate', periodFilter.startDate);
-            params.set('endDate', periodFilter.endDate);
+          // Outros períodos: usar getPeriodFilter (passar earliestDate para 'all')
+          // Para 'month', não precisa esperar earliestDate
+          if (period === 'month') {
+            const now = new Date();
+            currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          } else {
+            const periodFilter = getPeriodFilter(period, earliestDate);
+            currentMonth = periodFilter.month || month;
+            if (periodFilter.startDate && periodFilter.endDate) {
+              useStartEnd = true;
+            }
           }
         }
-      }
-      
-      // Adicionar token de autenticação
-      const user = auth.currentUser;
-      if (!user) return;
-      
-      const token = await user.getIdToken();
-      fetch(`/api/trades?${params.toString()}`, { 
-        cache: 'no-store',
-        headers: {
-          Authorization: `Bearer ${token}`
+        
+        type ApiTrade = {
+          executedAt: string | Date;
+          exchange: string;
+          market: string;
+          symbol: string;
+          side: string;
+          qty: string;
+          price: string;
+          feeValue: string;
+          feeAsset: string;
+          feePct: string;
+          realizedPnl: string;
+          orderId?: string | null;
+          tradeId?: string | null;
+          orderType?: string | null;
+        };
+        type ApiResponse = {
+          total: number;
+          rows: ApiTrade[];
+          summary: {
+            pnlMonth: string;
+            feesTotal: string;
+            avgFeePct: string;
+            tradesCount: number;
+            winRate: number;
+            initialBalance: string;
+            bestTrade: string;
+            worstTrade: string;
+            totalVolume: string;
+            maxDrawdown: string;
+            currentDrawdown: string;
+            winningTrades: number;
+            losingTrades: number;
+          };
+        };
+        const params = new URLSearchParams({ month: currentMonth, page: String(page), pageSize: String(pageSize) });
+        if (market) params.set('market', market);
+        if (symbol) params.set('symbol', symbol);
+        if (useStartEnd) {
+          if (period === 'custom' && startDate && endDate) {
+            params.set('startDate', startDate);
+            params.set('endDate', endDate);
+          } else {
+            const periodFilter = getPeriodFilter(period, earliestDate);
+            if (periodFilter.startDate && periodFilter.endDate) {
+              params.set('startDate', periodFilter.startDate);
+              params.set('endDate', periodFilter.endDate);
+            }
+          }
         }
-      })
-        .then((r) => r.json())
-        .then((d: ApiResponse) => {
-          setTotal(d.total);
-          setSummary(d.summary);
-          setRows(
-            d.rows.map((t: ApiTrade) => ({
-              executedAt: new Date(t.executedAt).toISOString(),
-              exchange: t.exchange,
-              market: t.market,
-              symbol: t.symbol,
-              side: t.side,
-              qty: t.qty,
-              price: t.price,
-              feeValue: t.feeValue,
-              feeAsset: t.feeAsset,
-              feePct: t.feePct,
-              realizedPnl: t.realizedPnl,
-              orderId: t.orderId ?? undefined,
-              tradeId: t.tradeId ?? undefined,
-              orderType: t.orderType ?? null,
-            }))
-          );
-        });
-    };
-    
-    fetchData();
-  }, [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize, earliestDate]);
+        
+        const token = await user.getIdToken();
+        fetch(`/api/trades?${params.toString()}`, { 
+          cache: 'no-store',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        })
+          .then((r) => r.json())
+          .then((d: ApiResponse) => {
+            setTotal(d.total);
+            setSummary(d.summary);
+            setRows(
+              d.rows.map((t: ApiTrade) => ({
+                executedAt: new Date(t.executedAt).toISOString(),
+                exchange: t.exchange,
+                market: t.market,
+                symbol: t.symbol,
+                side: t.side,
+                qty: t.qty,
+                price: t.price,
+                feeValue: t.feeValue,
+                feeAsset: t.feeAsset,
+                feePct: t.feePct,
+                realizedPnl: t.realizedPnl,
+                orderId: t.orderId ?? undefined,
+                tradeId: t.tradeId ?? undefined,
+                orderType: t.orderType ?? null,
+              }))
+            );
+          })
+          .catch((error) => {
+            console.error('Error fetching trades:', error);
+          });
+      };
+
+      fetchData();
+    });
+
+    return () => unsubscribe();
+    // Para 'month', não precisa esperar earliestDate - executar imediatamente
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, period === 'month' 
+    ? [month, period, market, symbol, page, pageSize] 
+    : [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize, earliestDate]);
 
   const handleExportCSV = async () => {
     const user = auth.currentUser;
