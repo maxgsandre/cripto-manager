@@ -150,6 +150,7 @@ export default function TradesPage() {
   const [rows, setRows] = useState<TradeRow[]>([]);
   const [summary, setSummary] = useState<{
     pnlMonth: string;
+    roiTotal: string | null;
     feesTotal: string;
     avgFeePct: string;
     tradesCount: number;
@@ -410,6 +411,7 @@ export default function TradesPage() {
           rows: ApiTrade[];
           summary: {
             pnlMonth: string;
+            roiTotal: string | null;
             feesTotal: string;
             avgFeePct: string;
             tradesCount: number;
@@ -1757,12 +1759,48 @@ export default function TradesPage() {
       {summary && (
         <div className="space-y-4">
           {/* Métricas principais */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-3 sm:p-4 bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4 p-3 sm:p-4 bg-gradient-to-r from-blue-500/10 to-indigo-500/5 backdrop-blur-sm rounded-lg border border-white/10">
             <div className="text-center">
               <div className="text-lg sm:text-2xl font-bold text-blue-400">
                 {formatCurrency(summary.pnlMonth)}
               </div>
               <div className="text-xs sm:text-sm text-slate-400">PnL Total</div>
+            </div>
+            <div className="text-center">
+              {summary.roiTotal !== null ? (
+                <>
+                  <div className={`text-lg sm:text-2xl font-bold ${Number(summary.roiTotal) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {Number(summary.roiTotal) >= 0 ? '+' : ''}{Number(summary.roiTotal).toFixed(2)}%
+                  </div>
+                  <div className="text-xs sm:text-sm text-slate-400">ROI Total</div>
+                </>
+              ) : (
+                <div className="group relative">
+                  <div className="text-lg sm:text-2xl font-bold text-slate-500">
+                    N/A
+                  </div>
+                  <div className="text-xs sm:text-sm text-slate-400">ROI Total</div>
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
+                    <div className="bg-slate-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg border border-white/10 whitespace-nowrap">
+                      <div className="mb-1">Configure o saldo inicial</div>
+                      <div className="text-slate-400">no Dashboard para calcular o ROI</div>
+                      <a 
+                        href="/dashboard" 
+                        className="text-blue-400 hover:text-blue-300 underline mt-1 block"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          window.location.href = '/dashboard';
+                        }}
+                      >
+                        Ir para Dashboard →
+                      </a>
+                    </div>
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
+                      <div className="border-4 border-transparent border-t-slate-800"></div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="text-center">
               <div className="text-lg sm:text-2xl font-bold text-green-400">

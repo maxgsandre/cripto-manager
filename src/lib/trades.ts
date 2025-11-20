@@ -222,8 +222,14 @@ export async function getTrades(
   // Cashflows são movimentações de dinheiro, não lucro/prejuízo
   const totalPnL = pnl;
   
+  // Calcular ROI total: (PnL / Saldo Inicial) * 100
+  // Se não houver saldo inicial, retornar null para indicar que não pode ser calculado
+  const initialBalanceNum = Number(balanceBRL);
+  const roiTotal = initialBalanceNum > 0 ? (totalPnL / initialBalanceNum) * 100 : null;
+  
   const summary = {
     pnlMonth: totalPnL.toString(), // Apenas PnL dos trades
+    roiTotal: roiTotal !== null ? roiTotal.toString() : null, // ROI total sobre saldo inicial (null se não houver saldo)
     feesTotal: fees.toString(),
     avgFeePct: (allFilteredTrades.length > 0 ? (feePctSum / allFilteredTrades.length) : 0).toString(),
     tradesCount: total,

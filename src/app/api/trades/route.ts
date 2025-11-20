@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
       total: 0, 
       summary: {
         pnlMonth: '0',
+        roiTotal: null,
         feesTotal: '0',
         avgFeePct: '0',
         tradesCount: 0,
