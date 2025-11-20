@@ -185,6 +185,7 @@ export async function syncAccount(
     const totalSteps = days * symbols.length;
     let currentStep = 0;
 
+    // Atualizar o job existente com o totalSteps correto (se já foi criado)
     if (jobId && userId) {
       await setProgress(jobId, {
         jobId,

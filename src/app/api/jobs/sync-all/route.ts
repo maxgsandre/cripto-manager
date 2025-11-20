@@ -50,6 +50,18 @@ export async function POST(request: Request) {
     // Criar jobId para rastrear progresso
     const jobId = userId ? createJobId(userId) : createJobId('system');
     
+    // Criar o job no banco ANTES de retornar o jobId (evita race condition)
+    if (userId) {
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 0,
+        currentStep: 0,
+        status: 'running',
+        message: 'Iniciando sincronização...'
+      });
+    }
+    
     // Iniciar sincronização de forma assíncrona
     (async () => {
       const results = [] as { accountId: string; name: string; inserted: number; updated: number; error?: string }[];
