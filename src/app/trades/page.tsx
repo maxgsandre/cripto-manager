@@ -1101,19 +1101,55 @@ export default function TradesPage() {
 
         // Polling do progresso
         let pollInterval: NodeJS.Timeout | null = null;
+        let pollCount = 0;
+        let lastPercent = -1;
+        let lastUpdateTime = Date.now();
+        const MAX_POLL_TIME = 10 * 60 * 1000; // 10 minutos máximo
+        const MAX_STALL_TIME = 2 * 60 * 1000; // 2 minutos sem mudança = travado
+        const startTime = Date.now();
+        
         pollInterval = setInterval(async () => {
           try {
+            pollCount++;
             const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
               headers: {
                 Authorization: `Bearer ${token}`
               }
             });
             const status = await statusResponse.json();
+            
+            // Log para debug (visível no console do navegador)
+            if (pollCount % 10 === 0 || status.status !== 'running') {
+              console.log(`[Sync Poll #${pollCount}] Status: ${status.status}, Progress: ${status.percent}%, Message: ${status.message || 'N/A'}`);
+            }
 
             if (status.error) {
               if (pollInterval) clearInterval(pollInterval);
               setSyncProgress(null);
               alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            // Verificar se travou (percent não muda há mais de 2 minutos)
+            const currentPercent = status.percent || 0;
+            if (currentPercent === lastPercent && currentPercent > 0) {
+              const timeSinceLastUpdate = Date.now() - lastUpdateTime;
+              if (timeSinceLastUpdate > MAX_STALL_TIME) {
+                if (pollInterval) clearInterval(pollInterval);
+                setSyncProgress(null);
+                alert('Sincronização travada. Por favor, tente novamente.');
+                return;
+              }
+            } else {
+              lastPercent = currentPercent;
+              lastUpdateTime = Date.now();
+            }
+
+            // Verificar timeout máximo (10 minutos)
+            if (Date.now() - startTime > MAX_POLL_TIME) {
+              if (pollInterval) clearInterval(pollInterval);
+              setSyncProgress(null);
+              alert('Tempo máximo de sincronização excedido. Por favor, tente novamente.');
               return;
             }
 
@@ -1934,9 +1970,24 @@ export default function TradesPage() {
                   </div>
                 )}
                 {syncProgress.status === 'running' && (
-                  <div className="flex items-center gap-2 text-slate-400 text-sm">
-                    <div className="animate-spin">⏳</div>
-                    <span>Processando...</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <div className="animate-spin">⏳</div>
+                      <span>Processando...</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.__syncPollInterval) {
+                          clearInterval(window.__syncPollInterval);
+                          window.__syncPollInterval = null;
+                        }
+                        setSyncProgress(null);
+                        alert('Sincronização cancelada');
+                      }}
+                      className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
+                    >
+                      Cancelar Sincronização
+                    </button>
                   </div>
                 )}
               </div>
