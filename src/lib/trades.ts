@@ -56,6 +56,7 @@ export async function getTrades(
     const range = monthRange(query.month);
     start = range.start;
     end = range.end;
+    console.log('[getTrades] monthRange:', query.month, '-> start:', start.toISOString(), 'end:', end.toISOString());
   }
 
   const where = {

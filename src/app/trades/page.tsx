@@ -375,6 +375,7 @@ export default function TradesPage() {
         } else if (period === 'month-select' && selectedMonth) {
           // Mês selecionado: usar o mês escolhido
           currentMonth = selectedMonth;
+          console.log('[Trades] Mês selecionado:', selectedMonth, '-> currentMonth:', currentMonth);
         } else {
           // Outros períodos: usar getPeriodFilter (passar earliestDate para 'all')
           // Para 'month', não precisa esperar earliestDate
@@ -481,11 +482,9 @@ export default function TradesPage() {
     });
 
     return () => unsubscribe();
-    // Para 'month', não precisa esperar earliestDate - executar imediatamente
+    // Array de dependências fixo para evitar erro do React
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, period === 'month' 
-    ? [month, period, market, symbol, page, pageSize] 
-    : [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize, earliestDate]);
+  }, [month, period, startDate, endDate, selectedMonth, market, symbol, page, pageSize, earliestDate]);
 
   const handleExportCSV = async () => {
     const user = auth.currentUser;
@@ -615,8 +614,14 @@ export default function TradesPage() {
 
   const getPeriodLabel = () => {
     if (period === 'month-select' && selectedMonth) {
-      const date = new Date(selectedMonth + '-01');
-      return `📅 ${date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+      // Usar formatação direta do string YYYY-MM para evitar problemas de timezone
+      const [y, m] = selectedMonth.split('-').map(Number);
+      const monthNames = [
+        'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+        'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+      ];
+      const monthName = monthNames[m - 1]; // m já vem como 1-12, então m-1 para indexar o array
+      return `📅 ${monthName} de ${y}`;
     }
     if (period === 'custom' && startDate && endDate) {
       return `🔧 ${new Date(startDate).toLocaleDateString('pt-BR')} - ${new Date(endDate).toLocaleDateString('pt-BR')}`;
