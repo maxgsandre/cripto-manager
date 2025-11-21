@@ -1127,9 +1127,7 @@ export default function TradesPage() {
         let pollCount = 0;
         let lastPercent = -1;
         let lastUpdateTime = Date.now();
-        const MAX_POLL_TIME = 10 * 60 * 1000; // 10 minutos máximo
         const MAX_STALL_TIME = 2 * 60 * 1000; // 2 minutos sem mudança = travado
-        const startTime = Date.now();
         
         pollInterval = setInterval(async () => {
           try {
@@ -1166,14 +1164,6 @@ export default function TradesPage() {
             } else {
               lastPercent = currentPercent;
               lastUpdateTime = Date.now();
-            }
-
-            // Verificar timeout máximo (10 minutos)
-            if (Date.now() - startTime > MAX_POLL_TIME) {
-              if (pollInterval) clearInterval(pollInterval);
-              setSyncProgress(null);
-              alert('Tempo máximo de sincronização excedido. Por favor, tente novamente.');
-              return;
             }
 
             setSyncProgress({
