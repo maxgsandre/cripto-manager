@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import InternalLayout from '@/components/InternalLayout';
 import { auth } from '@/lib/firebase/client';
+import { onAuthStateChanged } from 'firebase/auth';
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { EditableCashflowBalance } from '@/components/EditableCashflowBalance';
 
@@ -182,36 +183,52 @@ export default function CashflowPage() {
   }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setRows([]);
+        setTotal(0);
+        setSummary(null);
+        return;
+      }
 
-      const token = await user.getIdToken();
-      const params = new URLSearchParams();
-      
-      // Aplicar lógica de período igual ao dashboard
-      if (period === 'custom' && startDate && endDate) {
-        params.set('startDate', startDate);
-        params.set('endDate', endDate);
-      } else if (period === 'month-select' && selectedMonth) {
-        const [year, monthNum] = selectedMonth.split('-').map(Number);
-        const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
-        const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
-        params.set('startDate', monthStart);
-        params.set('endDate', monthEnd);
-      } else {
-        const periodFilter = getPeriodFilter(period, earliestDate);
-        if (periodFilter.startDate && periodFilter.endDate) {
-          params.set('startDate', periodFilter.startDate);
-          params.set('endDate', periodFilter.endDate);
-        } else if (periodFilter.month) {
-          const [year, monthNum] = periodFilter.month.split('-').map(Number);
+      const fetchData = async () => {
+        const token = await user.getIdToken();
+        const params = new URLSearchParams();
+        
+        // Aplicar lógica de período igual ao dashboard
+        if (period === 'custom' && startDate && endDate) {
+          params.set('startDate', startDate);
+          params.set('endDate', endDate);
+        } else if (period === 'month-select' && selectedMonth) {
+          const [year, monthNum] = selectedMonth.split('-').map(Number);
           const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
           const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
           params.set('startDate', monthStart);
           params.set('endDate', monthEnd);
+        } else {
+          // Para 'month', calcular diretamente sem depender de earliestDate
+          if (period === 'month') {
+            const now = new Date();
+            const year = now.getFullYear();
+            const monthNum = now.getMonth() + 1;
+            const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+            const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+            params.set('startDate', monthStart);
+            params.set('endDate', monthEnd);
+          } else {
+            const periodFilter = getPeriodFilter(period, earliestDate);
+            if (periodFilter.startDate && periodFilter.endDate) {
+              params.set('startDate', periodFilter.startDate);
+              params.set('endDate', periodFilter.endDate);
+            } else if (periodFilter.month) {
+              const [year, monthNum] = periodFilter.month.split('-').map(Number);
+              const monthStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+              const monthEnd = new Date(year, monthNum, 0).toISOString().split('T')[0];
+              params.set('startDate', monthStart);
+              params.set('endDate', monthEnd);
+            }
+          }
         }
-      }
       
       if (type) params.set('type', type);
       if (asset) params.set('asset', asset);
@@ -265,7 +282,14 @@ export default function CashflowPage() {
     };
 
     fetchData();
-  }, [page, pageSize, period, startDate, endDate, selectedMonth, type, asset, earliestDate]);
+    });
+
+    return () => unsubscribe();
+    // Para 'month', não precisa esperar earliestDate - executar imediatamente
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, period === 'month' 
+    ? [page, pageSize, period, type, asset] 
+    : [page, pageSize, period, startDate, endDate, selectedMonth, type, asset, earliestDate]);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -329,17 +353,53 @@ export default function CashflowPage() {
           status: 'running',
         });
 
+        let pollCount = 0;
+        let lastPercent = -1;
+        let lastUpdateTime = Date.now();
+        const MAX_POLL_TIME = 10 * 60 * 1000; // 10 minutos máximo
+        const MAX_STALL_TIME = 2 * 60 * 1000; // 2 minutos sem mudança = travado
+        const startTime = Date.now();
+
         const pollInterval = setInterval(async () => {
           try {
+            pollCount++;
             const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
               headers: { Authorization: `Bearer ${token}` },
             });
             const status = await statusResponse.json();
 
+            // Log para debug (visível no console do navegador)
+            if (pollCount % 10 === 0 || status.status !== 'running') {
+              console.log(`[Cashflow Sync Poll #${pollCount}] Status: ${status.status}, Progress: ${status.percent}%, Message: ${status.message || 'N/A'}`);
+            }
+
             if (status.error) {
               if (pollInterval) clearInterval(pollInterval);
               setSyncProgress(null);
               alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            // Verificar se travou (percent não muda há mais de 2 minutos)
+            const currentPercent = status.percent || 0;
+            if (currentPercent === lastPercent && currentPercent > 0) {
+              const timeSinceLastUpdate = Date.now() - lastUpdateTime;
+              if (timeSinceLastUpdate > MAX_STALL_TIME) {
+                if (pollInterval) clearInterval(pollInterval);
+                setSyncProgress(null);
+                alert('Sincronização travada. Por favor, tente novamente.');
+                return;
+              }
+            } else {
+              lastPercent = currentPercent;
+              lastUpdateTime = Date.now();
+            }
+
+            // Verificar timeout máximo (10 minutos)
+            if (Date.now() - startTime > MAX_POLL_TIME) {
+              if (pollInterval) clearInterval(pollInterval);
+              setSyncProgress(null);
+              alert('Tempo máximo de sincronização excedido. Por favor, tente novamente.');
               return;
             }
 
@@ -1048,11 +1108,32 @@ export default function CashflowPage() {
                 <div className="space-y-4">
                   <div className="w-full bg-white/5 rounded-full h-2">
                     <div
-                      className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        syncProgress.status === 'completed' 
+                          ? 'bg-green-500' 
+                          : syncProgress.status === 'error'
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-blue-500 to-cyan-500'
+                      }`}
                       style={{ width: `${syncProgress.percent}%` }}
                     />
                   </div>
                   <div className="text-sm text-slate-300">{syncProgress.message}</div>
+                  {syncProgress.status === 'running' && (
+                    <button
+                      onClick={() => {
+                        if (window.__cashflowPollInterval) {
+                          clearInterval(window.__cashflowPollInterval);
+                          window.__cashflowPollInterval = null;
+                        }
+                        setSyncProgress(null);
+                        alert('Sincronização cancelada');
+                      }}
+                      className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
+                    >
+                      Cancelar Sincronização
+                    </button>
+                  )}
                   {syncProgress.status === 'completed' && syncProgress.result && (
                     <div className="text-sm text-green-400">
                       <div className="font-semibold mb-1">✓ Sincronização concluída!</div>
