@@ -6,11 +6,12 @@ import { auth } from '@/lib/firebase/client';
 import { onAuthStateChanged } from 'firebase/auth';
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 
-// Estender Window para incluir __syncPollInterval e __tradesImportPollInterval
+// Estender Window para incluir __syncPollInterval, __tradesImportPollInterval e __deduplicatePollInterval
 declare global {
   interface Window {
     __syncPollInterval?: NodeJS.Timeout | null;
     __tradesImportPollInterval?: NodeJS.Timeout | null;
+    __deduplicatePollInterval?: NodeJS.Timeout | null;
   }
 }
 
@@ -169,6 +170,15 @@ export default function TradesPage() {
   const [syncStartDate, setSyncStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [syncSymbols, setSyncSymbols] = useState('BTCBRL\nETHBRL\nBNBBRL');
+  const [showDeduplicateModal, setShowDeduplicateModal] = useState(false);
+  const [deduplicatePeriod, setDeduplicatePeriod] = useState('month');
+  const [deduplicateStartDate, setDeduplicateStartDate] = useState('');
+  const [deduplicateEndDate, setDeduplicateEndDate] = useState('');
+  const [deduplicateSelectedMonth, setDeduplicateSelectedMonth] = useState('');
+  const [deduplicateMarket, setDeduplicateMarket] = useState('');
+  const [deduplicateSymbol, setDeduplicateSymbol] = useState('');
+  const [deduplicatePeriodDropdownOpen, setDeduplicatePeriodDropdownOpen] = useState(false);
+  const [deduplicateMonthSelectOpen, setDeduplicateMonthSelectOpen] = useState(false);
   const [showRecalcModal, setShowRecalcModal] = useState(false);
   const [recalcStartDate, setRecalcStartDate] = useState('');
   const [recalcEndDate, setRecalcEndDate] = useState('');
@@ -188,6 +198,14 @@ export default function TradesPage() {
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
   const [earliestDate, setEarliestDate] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{
+    jobId: string | null;
+    percent: number;
+    message: string;
+    status: 'running' | 'completed' | 'error';
+    result?: { inserted: number; updated: number };
+    error?: string;
+  } | null>(null);
+  const [deduplicateProgress, setDeduplicateProgress] = useState<{
     jobId: string | null;
     percent: number;
     message: string;
@@ -628,6 +646,174 @@ export default function TradesPage() {
     }
     const option = periodOptions.find(opt => opt.value === period);
     return option ? option.label : '📅 Este Mês';
+  };
+
+  const deduplicateTrades = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      alert('Você precisa estar logado para remover duplicatas');
+      return;
+    }
+
+    try {
+      const token = await user.getIdToken();
+      
+      // Obter filtros do modal de deduplicação
+      let monthFilter: string | undefined;
+      let startDateFilter: string | undefined;
+      let endDateFilter: string | undefined;
+
+      if (deduplicatePeriod === 'month-select' && deduplicateSelectedMonth) {
+        monthFilter = deduplicateSelectedMonth;
+      } else if (deduplicatePeriod === 'custom' && deduplicateStartDate && deduplicateEndDate) {
+        startDateFilter = deduplicateStartDate;
+        endDateFilter = deduplicateEndDate;
+      } else if (deduplicatePeriod === 'month') {
+        monthFilter = getMonth();
+      } else if (deduplicatePeriod === 'week') {
+        const periodFilter = getPeriodFilter('week', earliestDate);
+        if (periodFilter.startDate && periodFilter.endDate) {
+          startDateFilter = periodFilter.startDate;
+          endDateFilter = periodFilter.endDate;
+        }
+      } else if (deduplicatePeriod === 'year') {
+        const periodFilter = getPeriodFilter('year', earliestDate);
+        if (periodFilter.startDate && periodFilter.endDate) {
+          startDateFilter = periodFilter.startDate;
+          endDateFilter = periodFilter.endDate;
+        }
+      } else if (deduplicatePeriod === 'all' && earliestDate) {
+        const periodFilter = getPeriodFilter('all', earliestDate);
+        if (periodFilter.startDate && periodFilter.endDate) {
+          startDateFilter = periodFilter.startDate;
+          endDateFilter = periodFilter.endDate;
+        }
+      }
+
+      const requestBody = {
+        month: monthFilter,
+        startDate: startDateFilter,
+        endDate: endDateFilter,
+        market: deduplicateMarket || undefined,
+        symbol: deduplicateSymbol || undefined,
+      };
+      
+      console.log('[Deduplicate] Enviando filtros:', {
+        period: deduplicatePeriod,
+        monthFilter,
+        startDateFilter,
+        endDateFilter,
+        market: deduplicateMarket,
+        symbol: deduplicateSymbol,
+        requestBody
+      });
+
+      const response = await fetch('/api/trades/deduplicate', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.jobId) {
+        // Iniciar polling do progresso
+        setDeduplicateProgress({
+          jobId: result.jobId,
+          percent: 0,
+          message: 'Iniciando remoção de duplicatas...',
+          status: 'running',
+        });
+
+        const MAX_STALL_TIME = 2 * 60 * 1000; // 2 minutos
+        let lastUpdateTime = Date.now();
+        let pollCount = 0;
+
+        const pollInterval = setInterval(async () => {
+          pollCount++;
+          try {
+            const statusResponse = await fetch(`/api/jobs/sync-status?jobId=${result.jobId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const status = await statusResponse.json();
+
+            console.log(`[Deduplicate Poll #${pollCount}] Status:`, status.status, `Progress:`, status.percent || 0, `%`);
+
+            if (status.error) {
+              if (pollInterval) clearInterval(pollInterval);
+              if (window.__deduplicatePollInterval === pollInterval) {
+                window.__deduplicatePollInterval = null;
+              }
+              setDeduplicateProgress(null);
+              alert(`Erro: ${status.error}`);
+              return;
+            }
+
+            // Verificar se está travado
+            if (status.status === 'running') {
+              const timeSinceLastUpdate = Date.now() - lastUpdateTime;
+              if (timeSinceLastUpdate > MAX_STALL_TIME) {
+                if (pollInterval) clearInterval(pollInterval);
+                if (window.__deduplicatePollInterval === pollInterval) {
+                  window.__deduplicatePollInterval = null;
+                }
+                setDeduplicateProgress(null);
+                alert('Remoção de duplicatas travada. Por favor, tente novamente.');
+                return;
+              }
+
+              lastUpdateTime = Date.now();
+            }
+
+            setDeduplicateProgress({
+              jobId: status.jobId,
+              percent: status.percent || 0,
+              message: status.message || 'Processando...',
+              status: status.status,
+              result: status.result,
+              error: status.error,
+            });
+
+            if (status.status === 'completed') {
+              if (pollInterval) clearInterval(pollInterval);
+              if (window.__deduplicatePollInterval === pollInterval) {
+                window.__deduplicatePollInterval = null;
+              }
+              setTimeout(() => {
+                let message = '✅ Remoção de duplicatas concluída!\n\n';
+                if (status.result) {
+                  message += `${status.result.updated || 0} trades duplicadas removidas.`;
+                }
+                alert(message);
+                setDeduplicateProgress(null);
+                window.location.reload();
+              }, 2000);
+            } else if (status.status === 'error') {
+              if (pollInterval) clearInterval(pollInterval);
+              if (window.__deduplicatePollInterval === pollInterval) {
+                window.__deduplicatePollInterval = null;
+              }
+              setTimeout(() => {
+                alert(`Erro na remoção de duplicatas: ${status.error || 'Erro desconhecido'}`);
+                setDeduplicateProgress(null);
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Error polling deduplicate status:', error);
+          }
+        }, 2000);
+
+        window.__deduplicatePollInterval = pollInterval;
+      } else {
+        alert(`Erro: ${result.error || result.message || 'Erro desconhecido'}`);
+      }
+    } catch (error) {
+      alert(`Erro ao remover duplicatas: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      setDeduplicateProgress(null);
+    }
   };
 
   const importCSV = async () => {
@@ -1493,41 +1679,28 @@ export default function TradesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button 
-            onClick={async () => {
-              const user = auth.currentUser;
-              if (!user) return;
-              
-              const confirmDedup = confirm(
-                '⚠️ Remover trades duplicadas?\n\n' +
-                'Isso irá:\n' +
-                '1. Remover duplicatas por Order ID (manter a mais recente)\n' +
-                '2. Remover duplicatas por Trade ID (manter a mais recente)\n' +
-                '3. Remover duplicatas por características similares (timestamp+symbol+side+price+qty)\n\n' +
-                'Esta ação não pode ser desfeita!'
-              );
-              
-              if (!confirmDedup) return;
-              
-              try {
-                const token = await user.getIdToken();
-                const response = await fetch('/api/trades/deduplicate', {
-                  method: 'POST',
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok) {
-                  alert(`✅ ${result.message}\n\nRemovidas ${result.deleted} trades duplicadas de ${result.duplicatesFound} encontradas.`);
-                  window.location.reload();
-                } else {
-                  alert(`Erro: ${result.error || result.message || 'Erro desconhecido'}`);
-                }
-              } catch (error) {
-                alert(`Erro ao remover duplicatas: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+            onClick={() => {
+              // Inicializar filtros do modal com os filtros atuais da página
+              if (period === 'month-select' && selectedMonth) {
+                setDeduplicatePeriod('month-select');
+                setDeduplicateSelectedMonth(selectedMonth);
+              } else if (period === 'custom' && startDate && endDate) {
+                setDeduplicatePeriod('custom');
+                setDeduplicateStartDate(startDate);
+                setDeduplicateEndDate(endDate);
+              } else if (period === 'month') {
+                setDeduplicatePeriod('month');
+                setDeduplicateSelectedMonth('');
+              } else if (period === 'week') {
+                setDeduplicatePeriod('week');
+              } else if (period === 'year') {
+                setDeduplicatePeriod('year');
+              } else if (period === 'all') {
+                setDeduplicatePeriod('all');
               }
+              setDeduplicateMarket(market);
+              setDeduplicateSymbol(symbol);
+              setShowDeduplicateModal(true);
             }}
             className="bg-white/10 hover:bg-white/20 text-white text-sm py-1.5 px-3 rounded-lg transition-colors"
             title="Remover trades duplicadas do banco de dados"
@@ -2909,6 +3082,270 @@ export default function TradesPage() {
                       setIsDeleting(false);
                     }}
                     disabled={isDeleting}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Remover Duplicatas */}
+      {showDeduplicateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl p-4 sm:p-6 max-w-md w-full border border-white/10 my-auto">
+            <h3 className="text-lg sm:text-xl text-white font-semibold mb-3 sm:mb-4">
+              {deduplicateProgress !== null ? 'Removendo Duplicatas' : 'Remover Duplicatas'}
+            </h3>
+            
+            {deduplicateProgress !== null ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-slate-300 text-sm">{deduplicateProgress.message}</span>
+                    <span className="text-slate-400 text-sm font-semibold">{deduplicateProgress.percent}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${
+                        deduplicateProgress.status === 'completed' 
+                          ? 'bg-green-500' 
+                          : deduplicateProgress.status === 'error'
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-orange-500 to-red-500'
+                      }`}
+                      style={{ width: `${deduplicateProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
+                {deduplicateProgress.status === 'completed' && deduplicateProgress.result && (
+                  <div className="text-sm text-green-400">
+                    <div className="font-semibold mb-1">✓ Remoção de duplicatas concluída!</div>
+                    <div>
+                      {deduplicateProgress.result.updated || 0} trades duplicadas removidas
+                    </div>
+                  </div>
+                )}
+                {deduplicateProgress.status === 'error' && (
+                  <div className="text-sm text-red-400">
+                    ✗ {deduplicateProgress.error || 'Erro desconhecido'}
+                  </div>
+                )}
+                {deduplicateProgress.status === 'running' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <div className="animate-spin">⏳</div>
+                      <span>Processando...</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.__deduplicatePollInterval) {
+                          clearInterval(window.__deduplicatePollInterval);
+                          window.__deduplicatePollInterval = null;
+                        }
+                        setDeduplicateProgress(null);
+                        alert('Remoção de duplicatas cancelada');
+                      }}
+                      className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
+                    >
+                      Cancelar Remoção
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">Período</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeduplicatePeriodDropdownOpen(!deduplicatePeriodDropdownOpen);
+                        setDeduplicateMonthSelectOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 border border-white/10 bg-white/5 text-white rounded-lg px-4 py-2.5 hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <span className="truncate">
+                        {deduplicatePeriod === 'custom' && deduplicateStartDate && deduplicateEndDate
+                          ? `${deduplicateStartDate} - ${deduplicateEndDate}`
+                          : deduplicatePeriod === 'month-select' && deduplicateSelectedMonth
+                          ? `Mês: ${deduplicateSelectedMonth}`
+                          : deduplicatePeriod === 'month'
+                          ? 'Este Mês'
+                          : deduplicatePeriod === 'week'
+                          ? 'Esta Semana'
+                          : deduplicatePeriod === 'year'
+                          ? 'Este Ano'
+                          : deduplicatePeriod === 'all'
+                          ? '🌐 Todos'
+                          : 'Selecione um período'}
+                      </span>
+                      <span className={`transition-transform flex-shrink-0 ${deduplicatePeriodDropdownOpen ? 'rotate-180' : ''}`}>⌄</span>
+                    </button>
+                    {deduplicatePeriodDropdownOpen && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-10" 
+                          onClick={() => {
+                            setDeduplicatePeriodDropdownOpen(false);
+                            if (!deduplicateSelectedMonth && deduplicatePeriod === 'month-select') {
+                              setDeduplicatePeriod('month');
+                            }
+                          }}
+                        />
+                        <div className="absolute z-20 mt-1 w-full bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                          {[
+                            { value: 'month', label: '📅 Este Mês' },
+                            { value: 'week', label: '📅 Esta Semana' },
+                            { value: 'year', label: '📅 Este Ano' },
+                            { value: 'month-select', label: '📅 Selecionar Mês' },
+                            { value: 'custom', label: '🔧 Período Customizado' },
+                            { value: 'all', label: '🌐 Todos' },
+                          ].map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => {
+                                setDeduplicatePeriod(opt.value as any);
+                                setDeduplicatePeriodDropdownOpen(false);
+                                if (opt.value === 'month-select') {
+                                  setDeduplicateMonthSelectOpen(true);
+                                }
+                              }}
+                              className={`w-full text-left px-4 py-2.5 text-sm hover:bg-white/10 transition-colors ${
+                                deduplicatePeriod === opt.value ? 'bg-blue-500/20 text-blue-400' : 'text-white'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {deduplicatePeriod === 'month-select' && deduplicateMonthSelectOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-25" 
+                        onClick={() => {
+                          setDeduplicateMonthSelectOpen(false);
+                          if (!deduplicateSelectedMonth) {
+                            setDeduplicatePeriod('month');
+                          }
+                        }}
+                      />
+                      <div className="relative z-30 mt-2">
+                        <label className="text-sm font-medium text-slate-300 mb-2">📅 Selecionar Mês</label>
+                        <input 
+                          type="month" 
+                          value={deduplicateSelectedMonth} 
+                          onChange={(e) => {
+                            setDeduplicateSelectedMonth(e.target.value);
+                            setDeduplicateMonthSelectOpen(false);
+                          }}
+                          className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        />
+                      </div>
+                    </>
+                  )}
+                  {deduplicatePeriod === 'custom' && (
+                    <div className="mt-2 space-y-2">
+                      <input 
+                        type="date" 
+                        value={deduplicateStartDate} 
+                        onChange={(e) => setDeduplicateStartDate(e.target.value)}
+                        className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        placeholder="Data inicial"
+                      />
+                      <input 
+                        type="date" 
+                        value={deduplicateEndDate} 
+                        onChange={(e) => setDeduplicateEndDate(e.target.value)}
+                        min={deduplicateStartDate}
+                        className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                        placeholder="Data final"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">
+                    Market <span className="text-slate-500 text-xs">(opcional)</span>
+                  </label>
+                  <select 
+                    value={deduplicateMarket} 
+                    onChange={(e) => setDeduplicateMarket(e.target.value)}
+                    className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-white/10 transition-colors [&>option]:bg-slate-800 [&>option]:text-white"
+                  >
+                    <option value="">Todos</option>
+                    {availableMarkets.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-sm mb-2">
+                    Symbol <span className="text-slate-500 text-xs">(opcional)</span>
+                  </label>
+                  <select 
+                    value={deduplicateSymbol} 
+                    onChange={(e) => setDeduplicateSymbol(e.target.value)}
+                    className="w-full border border-white/10 bg-white/5 text-white rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-white/10 transition-colors [&>option]:bg-slate-800 [&>option]:text-white"
+                  >
+                    <option value="">Todos</option>
+                    {availableSymbols.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="text-sm text-slate-300">
+                  <p className="mb-2">Esta ação irá:</p>
+                  <ul className="list-disc list-inside space-y-1 text-slate-400">
+                    <li>Remover duplicatas por Order ID (manter a mais recente)</li>
+                    <li>Remover duplicatas por Trade ID (manter a mais recente)</li>
+                    <li>Remover duplicatas por características similares (timestamp+symbol+side+price+qty)</li>
+                  </ul>
+                  <p className="mt-3 text-orange-400 font-semibold">
+                    ⚠️ Esta ação não pode ser desfeita!
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={deduplicateTrades}
+                    disabled={
+                      !!deduplicateProgress || 
+                      (deduplicatePeriod === 'month-select' && !deduplicateSelectedMonth) || 
+                      (deduplicatePeriod === 'custom' && (!deduplicateStartDate || !deduplicateEndDate))
+                    }
+                    className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Remover Duplicatas
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (window.__deduplicatePollInterval) {
+                        clearInterval(window.__deduplicatePollInterval);
+                        window.__deduplicatePollInterval = null;
+                      }
+                      setShowDeduplicateModal(false);
+                      setDeduplicateProgress(null);
+                      // Resetar filtros
+                      setDeduplicatePeriod('month');
+                      setDeduplicateStartDate('');
+                      setDeduplicateEndDate('');
+                      setDeduplicateSelectedMonth('');
+                      setDeduplicateMarket('');
+                      setDeduplicateSymbol('');
+                    }}
+                    disabled={false}
                     className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancelar

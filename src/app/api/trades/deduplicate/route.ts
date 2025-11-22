@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createJobId, setProgress } from '@/lib/sync/progress';
+import { monthRange } from '@/lib/format';
 
 async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
   const authHeader = req.headers.get('authorization');
@@ -23,6 +25,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const { month, startDate, endDate, market, symbol } = body;
+
+    console.log('[Deduplicate API] Filtros recebidos:', { month, startDate, endDate, market, symbol });
+
     // Buscar todas as contas do usuário
     const userAccounts = await prisma.binanceAccount.findMany({
       where: { userId },
@@ -34,123 +41,229 @@ export async function POST(req: NextRequest) {
     }
 
     const accountIds = userAccounts.map(acc => acc.id);
-    let totalDuplicates = 0;
-    let totalDeleted = 0;
 
-    // Estratégia 1: Duplicatas por orderId (manter a mais recente)
-    const tradesByOrderId = await prisma.trade.findMany({
-      where: {
-        accountId: { in: accountIds },
-        orderId: { not: null },
-      },
-      orderBy: [
-        { orderId: 'asc' },
-        { createdAt: 'desc' }, // Mais recente primeiro
-      ],
+    // Determinar range de datas
+    let dateFilter: { gte: Date; lte: Date } | undefined;
+    if (month) {
+      const range = monthRange(month);
+      dateFilter = { gte: range.start, lte: range.end };
+      console.log('[Deduplicate API] Filtro por mês:', month, '->', range.start.toISOString(), 'até', range.end.toISOString());
+    } else if (startDate && endDate) {
+      dateFilter = {
+        gte: new Date(startDate + 'T00:00:00.000Z'),
+        lte: new Date(endDate + 'T23:59:59.999Z')
+      };
+      console.log('[Deduplicate API] Filtro por período:', startDate, 'até', endDate, '->', dateFilter.gte.toISOString(), 'até', dateFilter.lte.toISOString());
+    } else {
+      console.log('[Deduplicate API] AVISO: Nenhum filtro de data aplicado! Processando TODOS os trades.');
+    }
+
+    // Criar jobId para rastrear progresso
+    const jobId = createJobId(userId);
+    
+    // Criar o job no banco ANTES de retornar o jobId
+    await setProgress(jobId, {
+      jobId,
+      userId,
+      totalSteps: 0,
+      currentStep: 0,
+      status: 'running',
+      message: 'Iniciando remoção de duplicatas...'
     });
 
-    const orderIdGroups = new Map<string, typeof tradesByOrderId>();
-    for (const trade of tradesByOrderId) {
-      if (!trade.orderId) continue;
-      const key = `${trade.accountId}_${trade.orderId}`;
-      if (!orderIdGroups.has(key)) {
-        orderIdGroups.set(key, []);
-      }
-      orderIdGroups.get(key)!.push(trade);
-    }
+    // Processar em background
+    (async () => {
+      let totalDuplicates = 0;
+      let totalDeleted = 0;
 
-    // Para cada grupo com mais de 1 trade, manter apenas o mais recente
-    for (const [key, trades] of orderIdGroups) {
-      if (trades.length > 1) {
-        const toKeep = trades[0]; // Mais recente (já ordenado)
-        const toDelete = trades.slice(1);
-        
-        for (const trade of toDelete) {
-          await prisma.trade.delete({ where: { id: trade.id } });
-          totalDeleted++;
-        }
-        totalDuplicates += trades.length - 1;
-      }
-    }
-
-    // Estratégia 2: Duplicatas por tradeId (manter a mais recente)
-    const tradesByTradeId = await prisma.trade.findMany({
-      where: {
+      // Construir filtros base
+      const baseWhere: any = {
         accountId: { in: accountIds },
-        tradeId: { not: null },
-        orderId: null, // Apenas trades sem orderId
-      },
-      orderBy: [
-        { tradeId: 'asc' },
-        { createdAt: 'desc' },
-      ],
-    });
-
-    const tradeIdGroups = new Map<string, typeof tradesByTradeId>();
-    for (const trade of tradesByTradeId) {
-      if (!trade.tradeId) continue;
-      const key = `${trade.accountId}_${trade.tradeId}`;
-      if (!tradeIdGroups.has(key)) {
-        tradeIdGroups.set(key, []);
+      };
+      if (dateFilter) {
+        baseWhere.executedAt = dateFilter;
+        console.log('[Deduplicate API] Aplicando filtro de data:', baseWhere.executedAt);
+      } else {
+        console.log('[Deduplicate API] AVISO: Sem filtro de data - processando TODOS os trades!');
       }
-      tradeIdGroups.get(key)!.push(trade);
-    }
-
-    for (const [key, trades] of tradeIdGroups) {
-      if (trades.length > 1) {
-        const toKeep = trades[0];
-        const toDelete = trades.slice(1);
-        
-        for (const trade of toDelete) {
-          await prisma.trade.delete({ where: { id: trade.id } });
-          totalDeleted++;
-        }
-        totalDuplicates += trades.length - 1;
+      if (market) {
+        baseWhere.market = market.toUpperCase().trim();
+        console.log('[Deduplicate API] Aplicando filtro de market:', baseWhere.market);
       }
-    }
-
-    // Estratégia 3: Duplicatas por chave única (timestamp+symbol+side+price+qty)
-    // Buscar trades sem orderId e sem tradeId
-    const tradesWithoutIds = await prisma.trade.findMany({
-      where: {
-        accountId: { in: accountIds },
-        orderId: null,
-        tradeId: null,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const uniqueKeyGroups = new Map<string, typeof tradesWithoutIds>();
-    for (const trade of tradesWithoutIds) {
-      const timestamp = Math.floor(trade.executedAt.getTime() / 1000); // Segundos
-      const price = parseFloat(trade.price.toString()).toFixed(8);
-      const qty = parseFloat(trade.qty.toString()).toFixed(8);
-      const key = `${trade.accountId}_${timestamp}_${trade.symbol}_${trade.side}_${price}_${qty}`;
+      if (symbol) {
+        baseWhere.symbol = symbol.toUpperCase().trim();
+        console.log('[Deduplicate API] Aplicando filtro de symbol:', baseWhere.symbol);
+      }
       
-      if (!uniqueKeyGroups.has(key)) {
-        uniqueKeyGroups.set(key, []);
-      }
-      uniqueKeyGroups.get(key)!.push(trade);
-    }
+      console.log('[Deduplicate API] Filtros finais (baseWhere):', JSON.stringify(baseWhere, null, 2));
 
-    for (const [key, trades] of uniqueKeyGroups) {
-      if (trades.length > 1) {
-        const toKeep = trades[0]; // Mais recente
-        const toDelete = trades.slice(1);
-        
-        for (const trade of toDelete) {
-          await prisma.trade.delete({ where: { id: trade.id } });
-          totalDeleted++;
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 3,
+        currentStep: 1,
+        status: 'running',
+        message: 'Buscando duplicatas por Order ID...'
+      });
+
+      // Estratégia 1: Duplicatas por orderId (manter a mais recente)
+      const tradesByOrderId = await prisma.trade.findMany({
+        where: {
+          ...baseWhere,
+          orderId: { not: null },
+        },
+        orderBy: [
+          { orderId: 'asc' },
+          { createdAt: 'desc' }, // Mais recente primeiro
+        ],
+      });
+
+      const orderIdGroups = new Map<string, typeof tradesByOrderId>();
+      for (const trade of tradesByOrderId) {
+        if (!trade.orderId) continue;
+        const key = `${trade.accountId}_${trade.orderId}`;
+        if (!orderIdGroups.has(key)) {
+          orderIdGroups.set(key, []);
         }
-        totalDuplicates += trades.length - 1;
+        orderIdGroups.get(key)!.push(trade);
       }
-    }
 
+      // Para cada grupo com mais de 1 trade, manter apenas o mais recente
+      for (const [key, trades] of orderIdGroups) {
+        if (trades.length > 1) {
+          const toKeep = trades[0]; // Mais recente (já ordenado)
+          const toDelete = trades.slice(1);
+          
+          for (const trade of toDelete) {
+            await prisma.trade.delete({ where: { id: trade.id } });
+            totalDeleted++;
+          }
+          totalDuplicates += trades.length - 1;
+        }
+      }
+
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 3,
+        currentStep: 2,
+        status: 'running',
+        message: 'Buscando duplicatas por Trade ID...'
+      });
+
+      // Estratégia 2: Duplicatas por tradeId (manter a mais recente)
+      const tradesByTradeId = await prisma.trade.findMany({
+        where: {
+          ...baseWhere,
+          tradeId: { not: null },
+          orderId: null, // Apenas trades sem orderId
+        },
+        orderBy: [
+          { tradeId: 'asc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      const tradeIdGroups = new Map<string, typeof tradesByTradeId>();
+      for (const trade of tradesByTradeId) {
+        if (!trade.tradeId) continue;
+        const key = `${trade.accountId}_${trade.tradeId}`;
+        if (!tradeIdGroups.has(key)) {
+          tradeIdGroups.set(key, []);
+        }
+        tradeIdGroups.get(key)!.push(trade);
+      }
+
+      for (const [key, trades] of tradeIdGroups) {
+        if (trades.length > 1) {
+          const toKeep = trades[0];
+          const toDelete = trades.slice(1);
+          
+          for (const trade of toDelete) {
+            await prisma.trade.delete({ where: { id: trade.id } });
+            totalDeleted++;
+          }
+          totalDuplicates += trades.length - 1;
+        }
+      }
+
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 3,
+        currentStep: 3,
+        status: 'running',
+        message: 'Buscando duplicatas por características similares...'
+      });
+
+      // Estratégia 3: Duplicatas por chave única (timestamp+symbol+side+price+qty)
+      // Buscar trades sem orderId e sem tradeId
+      const tradesWithoutIds = await prisma.trade.findMany({
+        where: {
+          ...baseWhere,
+          orderId: null,
+          tradeId: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const uniqueKeyGroups = new Map<string, typeof tradesWithoutIds>();
+      for (const trade of tradesWithoutIds) {
+        const timestamp = Math.floor(trade.executedAt.getTime() / 1000); // Segundos
+        const price = parseFloat(trade.price.toString()).toFixed(8);
+        const qty = parseFloat(trade.qty.toString()).toFixed(8);
+        const key = `${trade.accountId}_${timestamp}_${trade.symbol}_${trade.side}_${price}_${qty}`;
+        
+        if (!uniqueKeyGroups.has(key)) {
+          uniqueKeyGroups.set(key, []);
+        }
+        uniqueKeyGroups.get(key)!.push(trade);
+      }
+
+      for (const [key, trades] of uniqueKeyGroups) {
+        if (trades.length > 1) {
+          const toKeep = trades[0]; // Mais recente
+          const toDelete = trades.slice(1);
+          
+          for (const trade of toDelete) {
+            await prisma.trade.delete({ where: { id: trade.id } });
+            totalDeleted++;
+          }
+          totalDuplicates += trades.length - 1;
+        }
+      }
+
+      // Atualizar progresso final
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 3,
+        currentStep: 3,
+        status: 'completed',
+        message: `Remoção de duplicatas concluída!`,
+        result: {
+          inserted: 0,
+          updated: totalDeleted
+        }
+      });
+    })().catch(async (error) => {
+      console.error('Async deduplicate error:', error);
+      await setProgress(jobId, {
+        jobId,
+        userId,
+        totalSteps: 3,
+        currentStep: 0,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    });
+
+    // Retornar jobId imediatamente
     return Response.json({
       ok: true,
-      duplicatesFound: totalDuplicates,
-      deleted: totalDeleted,
-      message: `Removidas ${totalDeleted} trades duplicadas`,
+      message: 'Remoção de duplicatas iniciada',
+      jobId,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Error deduplicating trades:', error);
