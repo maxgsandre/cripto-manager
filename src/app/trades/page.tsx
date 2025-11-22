@@ -1467,14 +1467,6 @@ export default function TradesPage() {
           );
         }
       }),
-      columnHelper.accessor('market', { 
-        header: '🏪 Mercado',
-        cell: ({ getValue }) => (
-          <span className="px-2 py-1 bg-white/10 text-white rounded text-xs">
-            {getValue()}
-          </span>
-        )
-      }),
       columnHelper.accessor('tradeId', { 
         header: '🆔 Trade ID',
         cell: ({ getValue }) => (
