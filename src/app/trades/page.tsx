@@ -3308,10 +3308,12 @@ export default function TradesPage() {
                 <div className="text-sm text-slate-300">
                   <p className="mb-2">Esta ação irá:</p>
                   <ul className="list-disc list-inside space-y-1 text-slate-400">
-                    <li>Remover duplicatas por Order ID (manter a mais recente)</li>
                     <li>Remover duplicatas por Trade ID (manter a mais recente)</li>
                     <li>Remover duplicatas por características similares (timestamp+symbol+side+price+qty)</li>
                   </ul>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Nota: Múltiplas execuções da mesma ordem (mesmo Order ID) são legítimas e não serão removidas.
+                  </p>
                   <p className="mt-3 text-orange-400 font-semibold">
                     ⚠️ Esta ação não pode ser desfeita!
                   </p>

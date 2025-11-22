@@ -100,63 +100,18 @@ export async function POST(req: NextRequest) {
       await setProgress(jobId, {
         jobId,
         userId,
-        totalSteps: 3,
+        totalSteps: 2,
         currentStep: 1,
-        status: 'running',
-        message: 'Buscando duplicatas por Order ID...'
-      });
-
-      // Estratégia 1: Duplicatas por orderId (manter a mais recente)
-      const tradesByOrderId = await prisma.trade.findMany({
-        where: {
-          ...baseWhere,
-          orderId: { not: null },
-        },
-        orderBy: [
-          { orderId: 'asc' },
-          { createdAt: 'desc' }, // Mais recente primeiro
-        ],
-      });
-
-      const orderIdGroups = new Map<string, typeof tradesByOrderId>();
-      for (const trade of tradesByOrderId) {
-        if (!trade.orderId) continue;
-        const key = `${trade.accountId}_${trade.orderId}`;
-        if (!orderIdGroups.has(key)) {
-          orderIdGroups.set(key, []);
-        }
-        orderIdGroups.get(key)!.push(trade);
-      }
-
-      // Para cada grupo com mais de 1 trade, manter apenas o mais recente
-      for (const [key, trades] of orderIdGroups) {
-        if (trades.length > 1) {
-          const toKeep = trades[0]; // Mais recente (já ordenado)
-          const toDelete = trades.slice(1);
-          
-          for (const trade of toDelete) {
-            await prisma.trade.delete({ where: { id: trade.id } });
-            totalDeleted++;
-          }
-          totalDuplicates += trades.length - 1;
-        }
-      }
-
-      await setProgress(jobId, {
-        jobId,
-        userId,
-        totalSteps: 3,
-        currentStep: 2,
         status: 'running',
         message: 'Buscando duplicatas por Trade ID...'
       });
 
-      // Estratégia 2: Duplicatas por tradeId (manter a mais recente)
+      // Estratégia 1: Duplicatas por tradeId (manter a mais recente)
+      // Trade ID é único por execução na Binance, então se aparecer mais de uma vez é duplicata real
       const tradesByTradeId = await prisma.trade.findMany({
         where: {
           ...baseWhere,
           tradeId: { not: null },
-          orderId: null, // Apenas trades sem orderId
         },
         orderBy: [
           { tradeId: 'asc' },
@@ -190,13 +145,13 @@ export async function POST(req: NextRequest) {
       await setProgress(jobId, {
         jobId,
         userId,
-        totalSteps: 3,
-        currentStep: 3,
+        totalSteps: 2,
+        currentStep: 2,
         status: 'running',
         message: 'Buscando duplicatas por características similares...'
       });
 
-      // Estratégia 3: Duplicatas por chave única (timestamp+symbol+side+price+qty)
+      // Estratégia 2: Duplicatas por chave única (timestamp+symbol+side+price+qty)
       // Buscar trades sem orderId e sem tradeId
       const tradesWithoutIds = await prisma.trade.findMany({
         where: {
@@ -237,8 +192,8 @@ export async function POST(req: NextRequest) {
       await setProgress(jobId, {
         jobId,
         userId,
-        totalSteps: 3,
-        currentStep: 3,
+        totalSteps: 2,
+        currentStep: 2,
         status: 'completed',
         message: `Remoção de duplicatas concluída!`,
         result: {
@@ -251,7 +206,7 @@ export async function POST(req: NextRequest) {
       await setProgress(jobId, {
         jobId,
         userId,
-        totalSteps: 3,
+        totalSteps: 2,
         currentStep: 0,
         status: 'error',
         error: error instanceof Error ? error.message : 'Unknown error'
