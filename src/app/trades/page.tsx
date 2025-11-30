@@ -3210,7 +3210,7 @@ export default function TradesPage() {
                               key={opt.value}
                               type="button"
                               onClick={() => {
-                                setDeduplicatePeriod(opt.value as any);
+                                setDeduplicatePeriod(opt.value as 'month' | 'week' | 'year' | 'month-select' | 'custom' | 'all');
                                 setDeduplicatePeriodDropdownOpen(false);
                                 if (opt.value === 'month-select') {
                                   setDeduplicateMonthSelectOpen(true);

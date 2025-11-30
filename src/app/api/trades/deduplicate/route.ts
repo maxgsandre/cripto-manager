@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createJobId, setProgress } from '@/lib/sync/progress';
 import { monthRange } from '@/lib/format';
+import { Prisma } from '@prisma/client';
 
 async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
   const authHeader = req.headers.get('authorization');
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
       let totalDeleted = 0;
 
       // Construir filtros base
-      const baseWhere: any = {
+      const baseWhere: Prisma.TradeWhereInput = {
         accountId: { in: accountIds },
       };
       if (dateFilter) {
