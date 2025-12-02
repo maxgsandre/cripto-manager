@@ -262,29 +262,49 @@ export async function GET(req: NextRequest) {
 
     // Calcular valor total em USDT para cada ativo e depois em BRL
     let totalUSDT = 0;
+    let totalBRLFiat = 0; // Saldo fiat em BRL (já está em reais, não precisa conversão)
     const assetsWithValue: { asset: string; amount: number; usdtValue: number; brlValue: number }[] = [];
     
     for (const bal of allBalances) {
-      const priceInUSDT = await getPriceInUSDT(bal.asset);
-      const usdtValue = bal.total * priceInUSDT;
-      const brlValue = usdtValue * brlPerUsdt;
-      
-      totalUSDT += usdtValue;
-      
-      assetsWithValue.push({
-        asset: bal.asset,
-        amount: bal.total,
-        usdtValue,
-        brlValue
-      });
+      // BRL fiat já está em reais, não precisa conversão
+      if (bal.asset === 'BRL') {
+        totalBRLFiat += bal.total;
+        const usdtValue = bal.total / brlPerUsdt; // Converter BRL para USDT apenas para exibição
+        
+        assetsWithValue.push({
+          asset: bal.asset,
+          amount: bal.total,
+          usdtValue,
+          brlValue: bal.total // BRL fiat já está em reais
+        });
+        
+        // Não adicionar ao totalUSDT, pois será somado separadamente ao totalBRL
+      } else {
+        // Para criptomoedas, converter para USDT e depois para BRL
+        const priceInUSDT = await getPriceInUSDT(bal.asset);
+        const usdtValue = bal.total * priceInUSDT;
+        const brlValue = usdtValue * brlPerUsdt;
+        
+        totalUSDT += usdtValue;
+        
+        assetsWithValue.push({
+          asset: bal.asset,
+          amount: bal.total,
+          usdtValue,
+          brlValue
+        });
+      }
     }
 
-    const totalBRL = totalUSDT * brlPerUsdt;
+    // Total em BRL = criptomoedas convertidas + BRL fiat direto
+    const totalBRL = (totalUSDT * brlPerUsdt) + totalBRLFiat;
+    // Total em USDT = criptomoedas + BRL fiat convertido
+    const totalUSDTWithFiat = totalUSDT + (totalBRLFiat / brlPerUsdt);
 
     return Response.json({ 
       ok: true, 
       balance: totalBRL.toFixed(8),
-      balanceUSDT: totalUSDT.toFixed(8),
+      balanceUSDT: totalUSDTWithFiat.toFixed(8),
       exchangeRate: brlPerUsdt.toFixed(2),
       assets: assetsWithValue,
       accounts: accounts.map(acc => ({ id: acc.id, name: acc.name }))
