@@ -113,6 +113,10 @@ export async function getTrades(
   let peak = 0;
   let runningPnL = 0;
 
+  // Agrupar trades por Order ID para contar wins/loses corretamente
+  // Trades sem Order ID são contados individualmente
+  const ordersMap = new Map<string, { pnl: number; realized: number }>();
+  
   for (const t of allFilteredTrades) {
     const realized = toNumber(t.realizedPnl);
     const qty = toNumber(t.qty);
@@ -122,11 +126,6 @@ export async function getTrades(
     const feeVal = toNumber(t.feeValue);
     fees += feeVal;
     feePctSum += toNumber(t.feePct);
-    if (realized > 0) wins += 1;
-    
-    // Calcular melhor e pior trade
-    if (realized > bestTrade) bestTrade = realized;
-    if (realized < worstTrade) worstTrade = realized;
     
     // Calcular volume total
     totalVolume += qty * price;
@@ -142,7 +141,42 @@ export async function getTrades(
         maxDrawdown = currentDrawdown;
       }
     }
+    
+    // Agrupar por Order ID para contar wins/loses
+    if (t.orderId) {
+      const orderKey = `${t.accountId}_${t.orderId}`;
+      const existing = ordersMap.get(orderKey);
+      if (existing) {
+        existing.pnl += realized;
+        if (realized > existing.realized) {
+          existing.realized = realized; // Manter o maior PnL individual para melhor/pior trade
+        }
+      } else {
+        ordersMap.set(orderKey, { pnl: realized, realized });
+      }
+    } else {
+      // Trades sem Order ID são contados individualmente
+      ordersMap.set(t.id, { pnl: realized, realized });
+    }
   }
+  
+  // Contar wins/loses baseado no PnL total de cada ordem
+  let losingTrades = 0;
+  for (const order of ordersMap.values()) {
+    if (order.pnl > 0) {
+      wins += 1;
+    } else if (order.pnl < 0) {
+      // Apenas contar como perdedor se PnL for negativo (PnL = 0 não conta)
+      losingTrades += 1;
+    }
+    
+    // Calcular melhor e pior trade (usar o PnL total da ordem)
+    if (order.pnl > bestTrade) bestTrade = order.pnl;
+    if (order.pnl < worstTrade) worstTrade = order.pnl;
+  }
+  
+  // Número de trades = número de ordens únicas (não execuções individuais)
+  const uniqueOrdersCount = ordersMap.size;
 
   // Buscar apenas os trades da página atual para exibir na tabela
   const trades: DbTrade[] = (await prisma.trade.findMany({
@@ -217,8 +251,6 @@ export async function getTrades(
     console.error('Erro ao buscar saldo inicial:', error);
   }
 
-  const losingTrades = total - wins;
-  
   // PnL total = apenas PnL dos trades (sem incluir cashflows)
   // Cashflows são movimentações de dinheiro, não lucro/prejuízo
   const totalPnL = pnl;
@@ -228,13 +260,17 @@ export async function getTrades(
   const initialBalanceNum = Number(balanceBRL);
   const roiTotal = initialBalanceNum > 0 ? (totalPnL / initialBalanceNum) * 100 : null;
   
+  // Win rate baseado em ordens únicas (não execuções)
+  const totalOrders = wins + losingTrades; // Apenas ordens com PnL != 0
+  const winRate = totalOrders > 0 ? wins / totalOrders : 0;
+  
   const summary = {
     pnlMonth: totalPnL.toString(), // Apenas PnL dos trades
     roiTotal: roiTotal !== null ? roiTotal.toString() : null, // ROI total sobre saldo inicial (null se não houver saldo)
     feesTotal: fees.toString(),
     avgFeePct: (allFilteredTrades.length > 0 ? (feePctSum / allFilteredTrades.length) : 0).toString(),
-    tradesCount: total,
-    winRate: total > 0 ? wins / total : 0,
+    tradesCount: uniqueOrdersCount, // Número de ordens únicas, não execuções
+    winRate: winRate,
     initialBalance: balanceBRL,
     bestTrade: bestTrade.toString(),
     worstTrade: worstTrade.toString(),
