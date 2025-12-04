@@ -1633,7 +1633,7 @@ export default function TradesPage() {
         cell: ({ row }) => {
           const volume = calculateVolume(row.original.qty, row.original.price);
           return (
-            <span className={`font-mono font-semibold text-purple-400 whitespace-nowrap ${row.original._isGroup ? 'underline' : ''}`}>
+            <span className={`font-mono font-semibold text-yellow-400 whitespace-nowrap ${row.original._isGroup ? 'underline' : ''}`}>
               {formatCurrency(volume)}
             </span>
           );
