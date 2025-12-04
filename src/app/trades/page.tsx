@@ -1505,11 +1505,11 @@ export default function TradesPage() {
   const columns = useMemo(
     () => [
       columnHelper.accessor('executedAt', { 
-        header: '📅 Data/Hora',
+        header: 'Data/Hora',
         cell: ({ getValue }) => formatDateTime(getValue())
       }),
       columnHelper.accessor('orderId', {
-        header: '🧾 Ordem',
+        header: 'Ordem',
         cell: ({ row, getValue }) => {
           const data = row.original;
           if (data._isGroup) {
@@ -1528,7 +1528,7 @@ export default function TradesPage() {
         },
       }),
       columnHelper.accessor('symbol', { 
-        header: '💰 Par Moeda',
+        header: 'Par Moeda',
         cell: ({ getValue, row }) => (
           <span className={`font-mono font-semibold text-blue-400 ${row.original._isChild ? 'opacity-70' : ''}`}>
             {getValue()}
@@ -1536,7 +1536,7 @@ export default function TradesPage() {
         )
       }),
       columnHelper.accessor('side', { 
-        header: '📊 Operação',
+        header: 'Operação',
         cell: ({ getValue }) => {
           const side = getValue();
           const isBuy = side === 'BUY' || side === 'LONG';
@@ -1551,7 +1551,7 @@ export default function TradesPage() {
       }),
       columnHelper.display({
         id: 'orderInfo',
-        header: '📋 Tipo de Ordem',
+        header: 'Tipo de Ordem',
         cell: ({ row }) => {
           const data = row.original;
           const orderType = data.orderType;
@@ -1604,13 +1604,13 @@ export default function TradesPage() {
         }
       }),
       columnHelper.accessor('price', { 
-        header: '💵 Preço',
+        header: 'Preço',
         cell: ({ getValue, row }) => (
           <span className={`font-mono whitespace-nowrap ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</span>
         )
       }),
       columnHelper.accessor('feeValue', { 
-        header: '💸 Taxa',
+        header: 'Taxa',
         cell: ({ getValue, row }) => (
           <div className="text-sm">
             <div className={`font-mono whitespace-nowrap ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</div>
@@ -1620,7 +1620,7 @@ export default function TradesPage() {
       }),
       columnHelper.display({
         id: 'volume',
-        header: '💎 Volume',
+        header: 'Volume',
         cell: ({ row }) => {
           const volume = calculateVolume(row.original.qty, row.original.price);
           return (
@@ -1631,7 +1631,7 @@ export default function TradesPage() {
         }
       }),
       columnHelper.accessor('realizedPnl', { 
-        header: '📊 PnL',
+        header: 'PnL',
         cell: ({ getValue }) => {
           const pnl = Number(getValue());
           return (
@@ -1643,7 +1643,7 @@ export default function TradesPage() {
       }),
       columnHelper.display({
         id: 'roi',
-        header: '🎯 ROI',
+        header: 'ROI',
         cell: ({ row }) => {
           const roi = calculateTradeROI(row.original.realizedPnl, row.original.qty, row.original.price);
           return (
@@ -1654,7 +1654,7 @@ export default function TradesPage() {
         }
       }),
       columnHelper.accessor('tradeId', { 
-        header: '🆔 Trade ID',
+        header: 'Trade ID',
         cell: ({ getValue }) => (
           <span className="font-mono text-xs text-slate-400">
             {getValue()?.slice(-8) || '-'}
