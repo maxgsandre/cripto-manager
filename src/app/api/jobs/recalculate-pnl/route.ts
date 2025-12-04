@@ -43,6 +43,16 @@ export async function POST(req: NextRequest) {
     // Criar jobId para rastrear progresso
     const jobId = createJobId(userId);
 
+    // Criar o job no banco ANTES de retornar o jobId (evita race condition)
+    await setProgress(jobId, {
+      jobId,
+      userId,
+      totalSteps: 0,
+      currentStep: 0,
+      status: 'running',
+      message: 'Iniciando recálculo de PnL...'
+    });
+
     // Iniciar recálculo de forma assíncrona
     (async () => {
       let totalUpdated = 0;
