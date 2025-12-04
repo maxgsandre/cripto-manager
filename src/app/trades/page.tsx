@@ -52,6 +52,15 @@ function formatCurrency(value: string | number): string {
   }).format(num);
 }
 
+// Função para formatar números sem símbolo de moeda
+function formatNumber(value: string | number): string {
+  const num = Number(value || 0);
+  return new Intl.NumberFormat('pt-BR', { 
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(num);
+}
+
 function formatPercentage(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
@@ -1604,9 +1613,9 @@ export default function TradesPage() {
         }
       }),
       columnHelper.accessor('price', { 
-        header: 'Preço',
+        header: 'Posição',
         cell: ({ getValue, row }) => (
-          <span className={`font-mono whitespace-nowrap ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatCurrency(getValue())}</span>
+          <span className={`font-mono whitespace-nowrap ${row.original._isGroup ? 'font-semibold' : ''}`}>{formatNumber(getValue())}</span>
         )
       }),
       columnHelper.accessor('feeValue', { 
